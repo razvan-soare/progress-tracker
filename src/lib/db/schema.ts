@@ -4,9 +4,10 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
-  category TEXT,
+  category TEXT NOT NULL DEFAULT 'custom',
   cover_image_uri TEXT,
   start_date TEXT NOT NULL,
+  end_date TEXT,
   reminder_time TEXT,
   reminder_days TEXT,
   created_at TEXT NOT NULL,
@@ -38,10 +39,15 @@ CREATE TABLE IF NOT EXISTS reports (
   project_id TEXT NOT NULL,
   month TEXT NOT NULL,
   summary_text TEXT,
+  entry_ids TEXT,
   first_entry_id TEXT,
   last_entry_id TEXT,
-  total_entries INTEGER,
-  generated_at TEXT,
+  total_entries INTEGER DEFAULT 0,
+  total_videos INTEGER DEFAULT 0,
+  total_photos INTEGER DEFAULT 0,
+  total_text_entries INTEGER DEFAULT 0,
+  total_duration_seconds INTEGER DEFAULT 0,
+  generated_at TEXT NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
@@ -72,5 +78,12 @@ CREATE TABLE IF NOT EXISTS sync_queue (
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_entries_project ON entries(project_id);
 CREATE INDEX IF NOT EXISTS idx_entries_created ON entries(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entries_project_created ON entries(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entries_upload_status ON entries(upload_status);
+CREATE INDEX IF NOT EXISTS idx_projects_is_deleted ON projects(is_deleted);
+CREATE INDEX IF NOT EXISTS idx_projects_category ON projects(category);
+CREATE INDEX IF NOT EXISTS idx_reports_project_month ON reports(project_id, month);
+CREATE INDEX IF NOT EXISTS idx_notification_settings_project ON notification_settings(project_id);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_attempts ON sync_queue(attempts);
+CREATE INDEX IF NOT EXISTS idx_sync_queue_table_record ON sync_queue(table_name, record_id);
 `;
