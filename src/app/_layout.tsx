@@ -5,6 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as SystemUI from "expo-system-ui";
 import { initDatabase } from "@/lib/db";
+import { AuthProvider } from "@/lib/auth";
 
 import "../../global.css";
 
@@ -58,15 +59,17 @@ export default function RootLayout() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: "#0a0a0a" },
-          animation: "slide_from_right",
-        }}
-      />
-    </QueryClientProvider>
+    <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: "#0a0a0a" },
+            animation: "slide_from_right",
+          }}
+        />
+      </QueryClientProvider>
+    </AuthProvider>
   );
 }
