@@ -7,10 +7,13 @@ import { generateId, formatDateTime } from "@/lib/utils";
 export interface ProjectStats {
   totalEntries: number;
   streakCount: number;
+  longestStreak: number;
   daysSinceStart: number;
   videoCount: number;
   photoCount: number;
   textCount: number;
+  firstEntryDate: string | null;
+  lastEntryDate: string | null;
 }
 
 export interface CreateProjectInput {
@@ -140,6 +143,19 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
         [id]
       );
 
+      // Get first and last entry dates
+      const dateResult = await db.getFirstAsync<{
+        first_entry: string | null;
+        last_entry: string | null;
+      }>(
+        `SELECT
+          MIN(created_at) as first_entry,
+          MAX(created_at) as last_entry
+        FROM entries
+        WHERE project_id = ? AND is_deleted = 0`,
+        [id]
+      );
+
       // Calculate streak - count consecutive days with entries from today backwards
       const streakResult = await db.getAllAsync<{ entry_date: string }>(
         `SELECT DISTINCT date(created_at) as entry_date
@@ -150,6 +166,8 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       );
 
       let streakCount = 0;
+      let longestStreak = 0;
+
       if (streakResult.length > 0) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -183,6 +201,31 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
             }
           }
         }
+
+        // Calculate longest streak by scanning all entry dates
+        let currentStreakLength = 1;
+        longestStreak = 1;
+
+        // Sort chronologically (oldest first) for longest streak calculation
+        const sortedDates = [...streakResult].reverse();
+
+        for (let i = 1; i < sortedDates.length; i++) {
+          const prevDate = new Date(sortedDates[i - 1].entry_date);
+          const currDate = new Date(sortedDates[i].entry_date);
+          prevDate.setHours(0, 0, 0, 0);
+          currDate.setHours(0, 0, 0, 0);
+
+          const diffDays = Math.floor(
+            (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+
+          if (diffDays === 1) {
+            currentStreakLength++;
+            longestStreak = Math.max(longestStreak, currentStreakLength);
+          } else {
+            currentStreakLength = 1;
+          }
+        }
       }
 
       // Calculate days since start
@@ -197,10 +240,13 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       const stats: ProjectStats = {
         totalEntries: countResult?.total ?? 0,
         streakCount,
+        longestStreak,
         daysSinceStart: Math.max(0, daysSinceStart),
         videoCount: countResult?.videos ?? 0,
         photoCount: countResult?.photos ?? 0,
         textCount: countResult?.texts ?? 0,
+        firstEntryDate: dateResult?.first_entry ?? null,
+        lastEntryDate: dateResult?.last_entry ?? null,
       };
 
       set((state) => ({
