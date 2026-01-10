@@ -12,7 +12,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { IconButton, Button, Card } from "@/components/ui";
-import { useProjectsStore } from "@/lib/store";
+import { RecentEntries, ProgressComparison } from "@/components/entry";
+import { useProjectsStore, useEntriesStore } from "@/lib/store";
 import { colors } from "@/constants/colors";
 import type { ProjectCategory } from "@/types";
 import type { ProjectStats } from "@/lib/store";
@@ -155,6 +156,7 @@ export default function ProjectDetailScreen() {
     projectsById,
     projectStats,
   } = useProjectsStore();
+  const { fetchEntries, entriesByProject } = useEntriesStore();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -163,6 +165,11 @@ export default function ProjectDetailScreen() {
 
   const project = id ? projectsById[id] : null;
   const stats = id ? projectStats[id] : null;
+  const entries = id ? entriesByProject[id] ?? [] : [];
+
+  // Get first and latest entries for comparison
+  const firstEntry = entries.length > 0 ? entries[entries.length - 1] : null;
+  const latestEntry = entries.length > 0 ? entries[0] : null;
 
   const loadProject = useCallback(async () => {
     if (!id) {
@@ -176,7 +183,10 @@ export default function ProjectDetailScreen() {
       if (!fetched) {
         setError("Project not found");
       } else {
-        await fetchProjectStats(id);
+        await Promise.all([
+          fetchProjectStats(id),
+          fetchEntries({ projectId: id }, "desc"),
+        ]);
         setReminderEnabled(
           Boolean(fetched.reminderTime && fetched.reminderDays?.length)
         );
@@ -186,7 +196,7 @@ export default function ProjectDetailScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [id, fetchProjectById, fetchProjectStats]);
+  }, [id, fetchProjectById, fetchProjectStats, fetchEntries]);
 
   useEffect(() => {
     loadProject();
@@ -450,6 +460,48 @@ export default function ProjectDetailScreen() {
           </View>
         </View>
 
+        {/* Entry Preview Section */}
+        {entries.length === 0 ? (
+          /* Empty State for No Entries */
+          <View className="px-4 pb-6">
+            <Card className="p-6 items-center">
+              <Text className="text-4xl mb-3">🎬</Text>
+              <Text className="text-text-primary font-semibold text-center text-lg">
+                Record your first entry
+              </Text>
+              <Text className="text-text-secondary text-sm text-center mt-2 mb-1">
+                Small daily records reveal big progress over time
+              </Text>
+              <View className="flex-row items-center justify-center mt-2 mb-4">
+                <Text className="text-text-secondary text-2xl mr-2">↑</Text>
+                <Text className="text-text-secondary text-sm italic">
+                  Use the Add Entry button above
+                </Text>
+              </View>
+            </Card>
+          </View>
+        ) : (
+          <>
+            {/* Recent Entries Section */}
+            <RecentEntries
+              entries={entries}
+              projectId={id!}
+              maxEntries={10}
+              onSeeAll={handleViewTimeline}
+            />
+
+            {/* Progress Comparison Teaser */}
+            {firstEntry && latestEntry && entries.length >= 2 && (
+              <ProgressComparison
+                firstEntry={firstEntry}
+                latestEntry={latestEntry}
+                projectId={id!}
+                onPress={handleViewReports}
+              />
+            )}
+          </>
+        )}
+
         {/* Reminders Section */}
         <View className="px-4 pb-6">
           <Text className="text-text-secondary text-xs uppercase tracking-wide mb-3 font-medium">
@@ -499,26 +551,6 @@ export default function ProjectDetailScreen() {
             )}
           </Card>
         </View>
-
-        {/* Empty State for No Entries */}
-        {stats?.totalEntries === 0 && (
-          <View className="px-4 pb-6">
-            <Card className="p-6 items-center">
-              <Text className="text-4xl mb-3">🎬</Text>
-              <Text className="text-text-primary font-semibold text-center text-lg">
-                Start tracking your progress
-              </Text>
-              <Text className="text-text-secondary text-sm text-center mt-2 mb-4">
-                Add your first entry to begin documenting your journey
-              </Text>
-              <Button
-                title="Add First Entry"
-                onPress={handleAddEntry}
-                variant="secondary"
-              />
-            </Card>
-          </View>
-        )}
       </ScrollView>
 
       {/* Floating Add Entry Button */}
