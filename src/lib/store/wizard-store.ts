@@ -7,11 +7,11 @@ export interface WizardFormData {
   name: string;
   description: string;
   startDate: string;
-  // Step 2: Category Selection
+  // Step 2: Category & Reminders
   category: ProjectCategory | null;
-  // Step 3: Reminders (future)
-  reminderTime?: string;
-  reminderDays?: string[];
+  reminderEnabled: boolean;
+  reminderTime: string;
+  reminderDays: string[];
 }
 
 export interface WizardFormErrors {
@@ -43,13 +43,17 @@ interface WizardState {
   hasFormData: () => boolean;
 }
 
+const ALL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DEFAULT_REMINDER_TIME = "20:00";
+
 const getInitialFormData = (): WizardFormData => ({
   name: "",
   description: "",
   startDate: formatDate(new Date()),
   category: null,
-  reminderTime: undefined,
-  reminderDays: undefined,
+  reminderEnabled: false,
+  reminderTime: DEFAULT_REMINDER_TIME,
+  reminderDays: [...ALL_DAYS],
 });
 
 export const useWizardStore = create<WizardState>((set, get) => ({

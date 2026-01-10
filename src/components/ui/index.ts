@@ -5,3 +5,4 @@ export { IconButton } from "./IconButton";
 export { EmptyState } from "./EmptyState";
 export { LoadingSpinner } from "./LoadingSpinner";
 export { DatePicker } from "./DatePicker";
+export { TimePicker } from "./TimePicker";
