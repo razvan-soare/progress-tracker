@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { View, Text, FlatList, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { useProjects } from "@/lib/store/hooks";
 import { EmptyState, LoadingSpinner, IconButton } from "@/components/ui";
 import { ProjectCard } from "@/components/project";
@@ -63,6 +64,7 @@ const TEST_PROJECT_STATS: Record<string, { entryCount: number; lastEntryDate?: s
 const SHOW_TEST_CARDS = true;
 
 export default function ProjectsScreen() {
+  const router = useRouter();
   const { projects, isLoading, refetch } = useProjects();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -81,9 +83,8 @@ export default function ProjectsScreen() {
   }, [refetch]);
 
   const handleAddProject = useCallback(() => {
-    // TODO: Navigate to create project screen
-    console.log("Navigate to create project");
-  }, []);
+    router.push("/project/create");
+  }, [router]);
 
   const handleProjectPress = useCallback((project: Project) => {
     // TODO: Navigate to project detail screen

@@ -21,3 +21,8 @@ export {
   useEntryMutations,
   type UseEntriesOptions,
 } from "./hooks";
+export {
+  useWizardStore,
+  type WizardFormData,
+  type WizardFormErrors,
+} from "./wizard-store";
