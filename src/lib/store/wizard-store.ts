@@ -12,6 +12,8 @@ export interface WizardFormData {
   reminderEnabled: boolean;
   reminderTime: string;
   reminderDays: string[];
+  // Step 3: Cover Image
+  coverImageUri: string | null;
 }
 
 export interface WizardFormErrors {
@@ -54,6 +56,7 @@ const getInitialFormData = (): WizardFormData => ({
   reminderEnabled: false,
   reminderTime: DEFAULT_REMINDER_TIME,
   reminderDays: [...ALL_DAYS],
+  coverImageUri: null,
 });
 
 export const useWizardStore = create<WizardState>((set, get) => ({
@@ -163,7 +166,8 @@ export const useWizardStore = create<WizardState>((set, get) => ({
     return !!(
       formData.name.trim() ||
       formData.description.trim() ||
-      formData.category
+      formData.category ||
+      formData.coverImageUri
     );
   },
 }));
