@@ -1,5 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, Animated } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  Animated,
+  AppState,
+  AppStateStatus,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { CameraView, CameraType } from "expo-camera";
@@ -12,7 +20,7 @@ import {
   getInfoAsync,
 } from "expo-file-system/legacy";
 import { CameraPermissionGate, LoadingSpinner } from "@/components/ui";
-import { PhotoPreview } from "@/components/camera";
+import { PhotoPreview, VideoPreview } from "@/components/camera";
 import { useDebouncedPress } from "@/lib/hooks";
 import { useToast } from "@/lib/toast/ToastContext";
 import { useEntriesStore } from "@/lib/store";
@@ -21,11 +29,20 @@ import { generateId } from "@/lib/utils";
 type CaptureMode = "photo" | "video";
 
 const IMAGES_DIRECTORY = `${documentDirectory}images/`;
+const VIDEOS_DIRECTORY = `${documentDirectory}videos/`;
+const MAX_RECORDING_DURATION = 180; // 3 minutes in seconds
 
 async function ensureImagesDirectory(): Promise<void> {
   const dirInfo = await getInfoAsync(IMAGES_DIRECTORY);
   if (!dirInfo.exists) {
     await makeDirectoryAsync(IMAGES_DIRECTORY, { intermediates: true });
+  }
+}
+
+async function ensureVideosDirectory(): Promise<void> {
+  const dirInfo = await getInfoAsync(VIDEOS_DIRECTORY);
+  if (!dirInfo.exists) {
+    await makeDirectoryAsync(VIDEOS_DIRECTORY, { intermediates: true });
   }
 }
 
@@ -38,6 +55,21 @@ async function savePhotoToDocuments(sourceUri: string): Promise<string> {
   return destinationUri;
 }
 
+async function saveVideoToDocuments(sourceUri: string): Promise<string> {
+  await ensureVideosDirectory();
+  const fileExtension = sourceUri.split(".").pop()?.toLowerCase() || "mp4";
+  const fileName = `${generateId()}.${fileExtension}`;
+  const destinationUri = `${VIDEOS_DIRECTORY}${fileName}`;
+  await copyAsync({ from: sourceUri, to: destinationUri });
+  return destinationUri;
+}
+
+function formatRecordingTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+
 export default function CameraScreen() {
   const router = useRouter();
   const { projectId } = useLocalSearchParams<{ projectId: string }>();
@@ -45,6 +77,9 @@ export default function CameraScreen() {
   const { showError, showSuccess } = useToast();
   const createEntry = useEntriesStore((state) => state.createEntry);
   const flashOpacity = useRef(new Animated.Value(0)).current;
+  const pulseOpacity = useRef(new Animated.Value(1)).current;
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const appStateRef = useRef(AppState.currentState);
 
   const [facing, setFacing] = useState<CameraType>("back");
   const [captureMode, setCaptureMode] = useState<CaptureMode>("photo");
@@ -52,6 +87,9 @@ export default function CameraScreen() {
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
+  const [capturedVideoUri, setCapturedVideoUri] = useState<string | null>(null);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Lock orientation to portrait on mount
@@ -69,6 +107,88 @@ export default function CameraScreen() {
       ScreenOrientation.unlockAsync();
     };
   }, []);
+
+  // Pulsing animation for recording indicator
+  useEffect(() => {
+    let pulseAnimation: Animated.CompositeAnimation | null = null;
+
+    if (isRecording) {
+      pulseAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseOpacity, {
+            toValue: 0.3,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseOpacity, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulseAnimation.start();
+    } else {
+      pulseOpacity.setValue(1);
+    }
+
+    return () => {
+      if (pulseAnimation) {
+        pulseAnimation.stop();
+      }
+    };
+  }, [isRecording, pulseOpacity]);
+
+  // Recording timer
+  useEffect(() => {
+    if (isRecording) {
+      setRecordingElapsed(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingElapsed((prev) => {
+          const next = prev + 1;
+          // Auto-stop recording at max duration
+          if (next >= MAX_RECORDING_DURATION) {
+            cameraRef.current?.stopRecording();
+          }
+          return next;
+        });
+      }, 1000);
+    } else {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    };
+  }, [isRecording]);
+
+  // Handle app state changes (backgrounding, interruptions)
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (
+        appStateRef.current === "active" &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        // App is going to background - stop recording if active
+        if (isRecording && cameraRef.current) {
+          cameraRef.current.stopRecording();
+        }
+      }
+      appStateRef.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isRecording]);
 
   const handleClose = useDebouncedPress(
     useCallback(() => {
@@ -128,18 +248,22 @@ export default function CameraScreen() {
     } else {
       // Video mode
       if (isRecording) {
-        // Stop recording
+        // Stop recording - the recordAsync promise will resolve
         cameraRef.current.stopRecording();
-        setIsRecording(false);
       } else {
         // Start recording
         setIsRecording(true);
         try {
           const video = await cameraRef.current.recordAsync({
-            maxDuration: 180, // 3 minutes max
+            maxDuration: MAX_RECORDING_DURATION,
           });
-          // TODO: Navigate to preview screen with recorded video
-          console.log("Video recorded:", video?.uri);
+          // Recording completed - show preview
+          if (video?.uri) {
+            setVideoDuration(recordingElapsed);
+            setCapturedVideoUri(video.uri);
+          } else {
+            showError("Failed to record video. Please try again.");
+          }
         } catch (error) {
           console.error("Failed to record video:", error);
           const errorMessage =
@@ -150,7 +274,7 @@ export default function CameraScreen() {
         }
       }
     }
-  }, [captureMode, isRecording, isCameraReady, isCapturing, triggerFlashAnimation, showError]);
+  }, [captureMode, isRecording, isCameraReady, isCapturing, recordingElapsed, triggerFlashAnimation, showError]);
 
   const handleCameraReady = useCallback(() => {
     setIsCameraReady(true);
@@ -169,6 +293,21 @@ export default function CameraScreen() {
     }
     setCapturedPhotoUri(null);
   }, [capturedPhotoUri]);
+
+  // Handle video retake - discard the captured video and return to camera view
+  const handleVideoRetake = useCallback(async () => {
+    if (capturedVideoUri) {
+      try {
+        // Delete the temporary video file
+        await deleteAsync(capturedVideoUri, { idempotent: true });
+      } catch (error) {
+        // Ignore deletion errors - the file might already be gone
+        console.warn("Failed to delete temporary video:", error);
+      }
+    }
+    setCapturedVideoUri(null);
+    setVideoDuration(0);
+  }, [capturedVideoUri]);
 
   // Handle use photo - save entry and navigate back
   const handleUsePhoto = useCallback(async () => {
@@ -207,9 +346,60 @@ export default function CameraScreen() {
     }
   }, [capturedPhotoUri, projectId, router, showError, showSuccess, createEntry]);
 
+  // Handle use video - save entry and navigate back
+  const handleUseVideo = useCallback(async () => {
+    if (!capturedVideoUri || !projectId) return;
+
+    setIsProcessing(true);
+    try {
+      // Save video to persistent storage
+      const savedUri = await saveVideoToDocuments(capturedVideoUri);
+
+      // Delete the temporary capture file
+      try {
+        await deleteAsync(capturedVideoUri, { idempotent: true });
+      } catch {
+        // Ignore deletion errors
+      }
+
+      // Create entry in database
+      await createEntry({
+        projectId,
+        entryType: "video",
+        mediaUri: savedUri,
+        durationSeconds: videoDuration,
+      });
+
+      showSuccess("Video saved successfully!");
+
+      // Navigate back to project detail
+      router.back();
+    } catch (error) {
+      console.error("Failed to save video:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      showError(`Failed to save video: ${errorMessage}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [capturedVideoUri, videoDuration, projectId, router, showError, showSuccess, createEntry]);
+
   // Determine required permissions based on mode
   const requiredPermissions: ("camera" | "microphone")[] =
     captureMode === "video" ? ["camera", "microphone"] : ["camera"];
+
+  // If video is captured, show video preview
+  if (capturedVideoUri) {
+    return (
+      <VideoPreview
+        videoUri={capturedVideoUri}
+        durationSeconds={videoDuration}
+        onRetake={handleVideoRetake}
+        onUseVideo={handleUseVideo}
+        isLoading={isProcessing}
+      />
+    );
+  }
 
   // If photo is captured, show preview instead of camera
   if (capturedPhotoUri) {
@@ -356,12 +546,35 @@ export default function CameraScreen() {
                 </Pressable>
               </View>
 
-              {/* Recording indicator text */}
+              {/* Recording indicator with timer and progress */}
               {isRecording && (
-                <View className="flex-row items-center justify-center mt-4">
-                  <View className="w-3 h-3 rounded-full bg-red-500 mr-2" />
-                  <Text className="text-white text-sm font-medium">
-                    Recording...
+                <View className="items-center mt-4">
+                  {/* Timer and pulsing indicator */}
+                  <View className="flex-row items-center justify-center mb-3">
+                    <Animated.View
+                      style={[
+                        styles.pulsingDot,
+                        { opacity: pulseOpacity },
+                      ]}
+                    />
+                    <Text className="text-white text-lg font-semibold ml-2">
+                      {formatRecordingTime(recordingElapsed)}
+                    </Text>
+                  </View>
+
+                  {/* Progress bar */}
+                  <View style={styles.progressBarContainer}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: `${Math.min((recordingElapsed / MAX_RECORDING_DURATION) * 100, 100)}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text className="text-white/60 text-xs mt-1">
+                    {formatRecordingTime(MAX_RECORDING_DURATION - recordingElapsed)} remaining
                   </Text>
                 </View>
               )}
@@ -407,5 +620,23 @@ const styles = StyleSheet.create({
   },
   captureButtonRecording: {
     backgroundColor: "rgba(239, 68, 68, 0.3)",
+  },
+  pulsingDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#ef4444",
+  },
+  progressBarContainer: {
+    width: 200,
+    height: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    backgroundColor: "#ef4444",
+    borderRadius: 2,
   },
 });
