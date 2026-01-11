@@ -1,8 +1,54 @@
 import { create } from "zustand";
+import { deleteAsync, getInfoAsync } from "expo-file-system/legacy";
 import type { Entry, EntryRow, EntryType, UploadStatus } from "@/types";
 import { getDatabase } from "@/lib/db/database";
 import { entryRowToModel, entryModelToRow } from "@/lib/db/mappers";
 import { generateId, formatDateTime } from "@/lib/utils";
+
+/**
+ * Adds an entry to the sync queue for future cloud upload.
+ * This is a non-blocking operation - sync queue failures should not block entry creation.
+ */
+async function addEntryToSyncQueue(
+  entryId: string,
+  operation: "create" | "update" | "delete"
+): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const now = formatDateTime(new Date());
+    await db.runAsync(
+      `INSERT INTO sync_queue (id, table_name, record_id, operation, created_at, attempts)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [generateId(), "entries", entryId, operation, now, 0]
+    );
+  } catch (error) {
+    // Sync queue failure should NOT block entry operations
+    console.warn("Failed to add entry to sync queue:", error);
+  }
+}
+
+/**
+ * Cleans up media files associated with a failed entry save.
+ * Used for rollback when entry creation fails after media files have been created.
+ */
+async function cleanupMediaFiles(
+  mediaUri?: string,
+  thumbnailUri?: string
+): Promise<void> {
+  const cleanupFile = async (uri: string | undefined) => {
+    if (!uri) return;
+    try {
+      const info = await getInfoAsync(uri);
+      if (info.exists) {
+        await deleteAsync(uri, { idempotent: true });
+      }
+    } catch (error) {
+      console.warn("Failed to cleanup file:", uri, error);
+    }
+  };
+
+  await Promise.all([cleanupFile(mediaUri), cleanupFile(thumbnailUri)]);
+}
 
 export interface EntryFilter {
   projectId: string;
@@ -149,23 +195,25 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
   createEntry: async (input: CreateEntryInput) => {
     set({ isLoading: true, error: null });
+
+    const entry: Entry = {
+      id: generateId(),
+      projectId: input.projectId,
+      entryType: input.entryType,
+      contentText: input.contentText,
+      mediaUri: input.mediaUri,
+      thumbnailUri: input.thumbnailUri,
+      durationSeconds: input.durationSeconds,
+      createdAt: formatDateTime(new Date()),
+      uploadStatus: "pending",
+      isDeleted: false,
+    };
+
     try {
       const db = await getDatabase();
-      const now = formatDateTime(new Date());
-      const entry: Entry = {
-        id: generateId(),
-        projectId: input.projectId,
-        entryType: input.entryType,
-        contentText: input.contentText,
-        mediaUri: input.mediaUri,
-        thumbnailUri: input.thumbnailUri,
-        durationSeconds: input.durationSeconds,
-        createdAt: now,
-        uploadStatus: "pending",
-        isDeleted: false,
-      };
-
       const row = entryModelToRow(entry);
+
+      // Insert entry record into database
       await db.runAsync(
         `INSERT INTO entries (
           id, project_id, entry_type, content_text, media_uri, media_remote_url,
@@ -190,9 +238,13 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       // Update project's updated_at timestamp
       await db.runAsync(
         "UPDATE projects SET updated_at = ? WHERE id = ?",
-        [now, input.projectId]
+        [entry.createdAt, input.projectId]
       );
 
+      // Add to sync queue for future cloud upload (non-blocking)
+      await addEntryToSyncQueue(entry.id, "create");
+
+      // Update Zustand store with new entry
       set((state) => {
         const projectEntries = state.entriesByProject[input.projectId] ?? [];
         return {
@@ -208,11 +260,16 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
       return entry;
     } catch (error) {
+      // Clean up media files if entry creation failed
+      // This prevents orphaned files from accumulating
+      await cleanupMediaFiles(input.mediaUri, input.thumbnailUri);
+
+      const errorMessage = error instanceof Error ? error.message : "Failed to create entry";
       set({
-        error: error instanceof Error ? error.message : "Failed to create entry",
+        error: errorMessage,
         isLoading: false,
       });
-      throw error;
+      throw new Error(errorMessage);
     }
   },
 
@@ -258,6 +315,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         ]
       );
 
+      // Add to sync queue for future cloud sync (non-blocking)
+      await addEntryToSyncQueue(id, "update");
+
       set((state) => {
         const projectEntries = state.entriesByProject[updatedEntry.projectId] ?? [];
         return {
@@ -294,6 +354,9 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         "UPDATE entries SET is_deleted = 1 WHERE id = ?",
         [id]
       );
+
+      // Add to sync queue for future cloud sync (non-blocking)
+      await addEntryToSyncQueue(id, "delete");
 
       set((state) => {
         const newEntriesById = { ...state.entriesById };
