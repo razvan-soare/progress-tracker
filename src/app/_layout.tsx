@@ -144,6 +144,13 @@ export default function RootLayout() {
                   presentation: "modal",
                 }}
               />
+              <Stack.Screen
+                name="entry/camera/[projectId]"
+                options={{
+                  animation: "slide_from_bottom",
+                  presentation: "fullScreenModal",
+                }}
+              />
             </Stack>
           </ToastProvider>
         </QueryClientProvider>
