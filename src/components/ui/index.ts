@@ -18,3 +18,8 @@ export {
 export { NetworkStatus } from "./NetworkStatus";
 export { Toast } from "./Toast";
 export { SuccessCelebration } from "./SuccessCelebration";
+export { PermissionRequest } from "./PermissionRequest";
+export type { PermissionType } from "./PermissionRequest";
+export { PermissionDenied } from "./PermissionDenied";
+export type { DeniedPermissionType } from "./PermissionDenied";
+export { CameraPermissionGate } from "./CameraPermissionGate";

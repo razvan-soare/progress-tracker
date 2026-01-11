@@ -1,12 +1,12 @@
-import { useState, useCallback, useRef } from "react";
-import { View, Text, Image, Pressable, ActivityIndicator, Alert, Animated } from "react-native";
+import { useState, useCallback } from "react";
+import { View, Text, Image, Pressable, ActivityIndicator, Alert, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, Href } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Button, IconButton, SuccessCelebration, ErrorView } from "@/components/ui";
+import { Button, IconButton, SuccessCelebration, ErrorView, PermissionRequest, PermissionDenied } from "@/components/ui";
 import { useWizardStore, useProjectsStore } from "@/lib/store";
 import { useToast } from "@/lib/toast";
-import { useBackHandler, useDebouncedPress } from "@/lib/hooks";
+import { useBackHandler, useDebouncedPress, useMediaPermissions } from "@/lib/hooks";
 import { pickImageFromCamera, pickImageFromLibrary, deleteImage } from "@/lib/utils";
 import { getDatabase } from "@/lib/db/database";
 import { generateId, formatDateTime } from "@/lib/utils";
@@ -26,17 +26,27 @@ const CATEGORY_ICONS: Record<string, string> = {
   custom: "✨",
 };
 
+type PermissionModalType = "camera" | "mediaLibrary" | null;
+
 export default function CoverImageScreen() {
   const router = useRouter();
   const { showError } = useToast();
   const { formData, previousStep, resetWizard, setFormField, isDirty } = useWizardStore();
   const { createProject } = useProjectsStore();
+  const {
+    permissions,
+    requestCameraPermission,
+    requestMediaLibraryPermission,
+    openSettings
+  } = useMediaPermissions();
 
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCelebration, setShowCelebration] = useState(false);
   const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
+  const [permissionModal, setPermissionModal] = useState<PermissionModalType>(null);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
 
   const gradientColors = formData.category
     ? CATEGORY_GRADIENTS[formData.category]
@@ -85,7 +95,7 @@ export default function CoverImageScreen() {
     }
   }, [isDirty, resetWizard, router]);
 
-  const handleTakePhoto = useCallback(async () => {
+  const proceedWithCamera = useCallback(async () => {
     setIsLoadingImage(true);
     setError(null);
 
@@ -101,7 +111,7 @@ export default function CoverImageScreen() {
     setIsLoadingImage(false);
   }, [setFormField, showError]);
 
-  const handleChooseFromLibrary = useCallback(async () => {
+  const proceedWithLibrary = useCallback(async () => {
     setIsLoadingImage(true);
     setError(null);
 
@@ -116,6 +126,62 @@ export default function CoverImageScreen() {
 
     setIsLoadingImage(false);
   }, [setFormField, showError]);
+
+  const handleTakePhoto = useCallback(() => {
+    // Check permission status
+    if (permissions.camera === "granted") {
+      proceedWithCamera();
+    } else if (permissions.camera === "denied") {
+      // Show denied modal with settings option
+      setPermissionModal("camera");
+    } else {
+      // Show permission request modal
+      setPermissionModal("camera");
+    }
+  }, [permissions.camera, proceedWithCamera]);
+
+  const handleChooseFromLibrary = useCallback(() => {
+    // Check permission status
+    if (permissions.mediaLibrary === "granted" || permissions.mediaLibrary === "limited") {
+      proceedWithLibrary();
+    } else if (permissions.mediaLibrary === "denied") {
+      // Show denied modal with settings option
+      setPermissionModal("mediaLibrary");
+    } else {
+      // Show permission request modal
+      setPermissionModal("mediaLibrary");
+    }
+  }, [permissions.mediaLibrary, proceedWithLibrary]);
+
+  const handleRequestPermission = useCallback(async () => {
+    setIsRequestingPermission(true);
+
+    let granted = false;
+    if (permissionModal === "camera") {
+      granted = await requestCameraPermission();
+      if (granted) {
+        setPermissionModal(null);
+        proceedWithCamera();
+      }
+    } else if (permissionModal === "mediaLibrary") {
+      granted = await requestMediaLibraryPermission();
+      if (granted) {
+        setPermissionModal(null);
+        proceedWithLibrary();
+      }
+    }
+
+    setIsRequestingPermission(false);
+  }, [permissionModal, requestCameraPermission, requestMediaLibraryPermission, proceedWithCamera, proceedWithLibrary]);
+
+  const handleOpenSettings = useCallback(() => {
+    openSettings();
+    setPermissionModal(null);
+  }, [openSettings]);
+
+  const handleClosePermissionModal = useCallback(() => {
+    setPermissionModal(null);
+  }, []);
 
   const handleRemoveImage = useCallback(async () => {
     if (formData.coverImageUri) {
@@ -438,6 +504,39 @@ export default function CoverImageScreen() {
         message="Project Created!"
         onComplete={handleCelebrationComplete}
       />
+
+      {/* Permission Modal */}
+      <Modal
+        visible={permissionModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={handleClosePermissionModal}
+      >
+        <Pressable
+          className="flex-1 bg-black/60 justify-center px-6"
+          onPress={handleClosePermissionModal}
+        >
+          <Pressable onPress={() => {}}>
+            {permissionModal !== null && (
+              permissions[permissionModal] === "denied" ? (
+                <PermissionDenied
+                  permissionType={permissionModal}
+                  onOpenSettings={handleOpenSettings}
+                  onCancel={handleClosePermissionModal}
+                  compact
+                />
+              ) : (
+                <PermissionRequest
+                  permissionType={permissionModal}
+                  onRequestPermission={handleRequestPermission}
+                  loading={isRequestingPermission}
+                  compact
+                />
+              )
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

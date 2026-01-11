@@ -10,6 +10,7 @@ import {
   Image,
   ActivityIndicator,
   Switch,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -22,10 +23,12 @@ import {
   TimePicker,
   ErrorView,
   FormSkeleton,
+  PermissionRequest,
+  PermissionDenied,
 } from "@/components/ui";
 import { useProjectsStore } from "@/lib/store";
 import { useToast } from "@/lib/toast";
-import { useBackHandler, useDebouncedPress } from "@/lib/hooks";
+import { useBackHandler, useDebouncedPress, useMediaPermissions } from "@/lib/hooks";
 import {
   formatDate,
   formatDateTime,
@@ -37,6 +40,8 @@ import {
 import { getDatabase } from "@/lib/db/database";
 import { colors } from "@/constants/colors";
 import type { ProjectCategory, Project } from "@/types";
+
+type PermissionModalType = "camera" | "mediaLibrary" | null;
 
 const MAX_NAME_LENGTH = 50;
 const MAX_DESCRIPTION_LENGTH = 200;
@@ -171,12 +176,20 @@ export default function EditProjectScreen() {
     projectsById,
     projectStats,
   } = useProjectsStore();
+  const {
+    permissions,
+    requestCameraPermission,
+    requestMediaLibraryPermission,
+    openSettings
+  } = useMediaPermissions();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [permissionModal, setPermissionModal] = useState<PermissionModalType>(null);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     name: "",
@@ -437,7 +450,7 @@ export default function EditProjectScreen() {
     [formData.reminderDays, setFormField]
   );
 
-  const handleTakePhoto = useCallback(async () => {
+  const proceedWithCamera = useCallback(async () => {
     setIsLoadingImage(true);
     setError(null);
 
@@ -453,7 +466,7 @@ export default function EditProjectScreen() {
     setIsLoadingImage(false);
   }, [setFormField, showError]);
 
-  const handleChooseFromLibrary = useCallback(async () => {
+  const proceedWithLibrary = useCallback(async () => {
     setIsLoadingImage(true);
     setError(null);
 
@@ -468,6 +481,56 @@ export default function EditProjectScreen() {
 
     setIsLoadingImage(false);
   }, [setFormField, showError]);
+
+  const handleTakePhoto = useCallback(() => {
+    if (permissions.camera === "granted") {
+      proceedWithCamera();
+    } else if (permissions.camera === "denied") {
+      setPermissionModal("camera");
+    } else {
+      setPermissionModal("camera");
+    }
+  }, [permissions.camera, proceedWithCamera]);
+
+  const handleChooseFromLibrary = useCallback(() => {
+    if (permissions.mediaLibrary === "granted" || permissions.mediaLibrary === "limited") {
+      proceedWithLibrary();
+    } else if (permissions.mediaLibrary === "denied") {
+      setPermissionModal("mediaLibrary");
+    } else {
+      setPermissionModal("mediaLibrary");
+    }
+  }, [permissions.mediaLibrary, proceedWithLibrary]);
+
+  const handleRequestPermission = useCallback(async () => {
+    setIsRequestingPermission(true);
+
+    let granted = false;
+    if (permissionModal === "camera") {
+      granted = await requestCameraPermission();
+      if (granted) {
+        setPermissionModal(null);
+        proceedWithCamera();
+      }
+    } else if (permissionModal === "mediaLibrary") {
+      granted = await requestMediaLibraryPermission();
+      if (granted) {
+        setPermissionModal(null);
+        proceedWithLibrary();
+      }
+    }
+
+    setIsRequestingPermission(false);
+  }, [permissionModal, requestCameraPermission, requestMediaLibraryPermission, proceedWithCamera, proceedWithLibrary]);
+
+  const handleOpenSettings = useCallback(() => {
+    openSettings();
+    setPermissionModal(null);
+  }, [openSettings]);
+
+  const handleClosePermissionModal = useCallback(() => {
+    setPermissionModal(null);
+  }, []);
 
   const handleRemoveImage = useCallback(async () => {
     if (formData.coverImageUri && formData.coverImageUri !== originalData?.coverImageUri) {
@@ -981,6 +1044,39 @@ export default function EditProjectScreen() {
           visible={showTimePicker}
           onClose={() => setShowTimePicker(false)}
         />
+
+        {/* Permission Modal */}
+        <Modal
+          visible={permissionModal !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={handleClosePermissionModal}
+        >
+          <Pressable
+            className="flex-1 bg-black/60 justify-center px-6"
+            onPress={handleClosePermissionModal}
+          >
+            <Pressable onPress={() => {}}>
+              {permissionModal !== null && (
+                permissions[permissionModal] === "denied" ? (
+                  <PermissionDenied
+                    permissionType={permissionModal}
+                    onOpenSettings={handleOpenSettings}
+                    onCancel={handleClosePermissionModal}
+                    compact
+                  />
+                ) : (
+                  <PermissionRequest
+                    permissionType={permissionModal}
+                    onRequestPermission={handleRequestPermission}
+                    loading={isRequestingPermission}
+                    compact
+                  />
+                )
+              )}
+            </Pressable>
+          </Pressable>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
