@@ -20,11 +20,12 @@ const MAX_CAPTION_LENGTH = 500;
 
 export default function EntryCreateScreen() {
   const router = useRouter();
-  const { projectId, mediaUri, mediaType, durationSeconds } = useLocalSearchParams<{
+  const { projectId, mediaUri, mediaType, durationSeconds, thumbnailUri } = useLocalSearchParams<{
     projectId: string;
     mediaUri?: string;
     mediaType?: EntryType;
     durationSeconds?: string;
+    thumbnailUri?: string;
   }>();
 
   const { showError, showSuccess } = useToast();
@@ -119,6 +120,7 @@ export default function EntryCreateScreen() {
         entryType,
         contentText: caption.trim() || undefined,
         mediaUri: hasMedia ? mediaUri : undefined,
+        thumbnailUri: entryType === "video" ? thumbnailUri : undefined,
         durationSeconds: entryType === "video" ? duration : undefined,
       });
 
@@ -138,6 +140,7 @@ export default function EntryCreateScreen() {
     isTextValid,
     mediaType,
     mediaUri,
+    thumbnailUri,
     durationSeconds,
     caption,
     hasMedia,
@@ -228,11 +231,11 @@ export default function EntryCreateScreen() {
             <View className="mt-4 items-center">
               <View className="rounded-xl overflow-hidden bg-surface relative">
                 <Image
-                  source={{ uri: mediaUri }}
+                  source={{ uri: mediaType === "video" && thumbnailUri ? thumbnailUri : mediaUri }}
                   className="w-64 h-64"
                   resizeMode="cover"
                   accessibilityLabel={
-                    mediaType === "photo" ? "Captured photo" : "Captured video"
+                    mediaType === "photo" ? "Captured photo" : "Captured video thumbnail"
                   }
                 />
                 {/* Video overlay indicator */}

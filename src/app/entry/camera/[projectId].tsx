@@ -23,7 +23,7 @@ import { CameraPermissionGate, LoadingSpinner } from "@/components/ui";
 import { PhotoPreview, VideoPreview } from "@/components/camera";
 import { useDebouncedPress } from "@/lib/hooks";
 import { useToast } from "@/lib/toast/ToastContext";
-import { generateId } from "@/lib/utils";
+import { generateId, generateVideoThumbnailSafe } from "@/lib/utils";
 
 type CaptureMode = "photo" | "video";
 
@@ -338,7 +338,7 @@ export default function CameraScreen() {
     }
   }, [capturedPhotoUri, projectId, router, showError]);
 
-  // Handle use video - save to documents and navigate to entry creation form
+  // Handle use video - save to documents, generate thumbnail, and navigate to entry creation form
   const handleUseVideo = useCallback(async () => {
     if (!capturedVideoUri || !projectId) return;
 
@@ -346,6 +346,16 @@ export default function CameraScreen() {
     try {
       // Save video to persistent storage
       const savedUri = await saveVideoToDocuments(capturedVideoUri);
+
+      // Generate thumbnail from the saved video
+      // This happens before showing the preview for a better user experience
+      const thumbnailResult = await generateVideoThumbnailSafe(savedUri);
+      const thumbnailUri = thumbnailResult.success ? thumbnailResult.uri : undefined;
+
+      if (!thumbnailResult.success) {
+        // Log the error but don't fail - we'll use a fallback placeholder
+        console.warn("Failed to generate thumbnail:", thumbnailResult.error);
+      }
 
       // Delete the temporary capture file
       try {
@@ -360,6 +370,12 @@ export default function CameraScreen() {
         mediaType: "video",
         durationSeconds: videoDuration.toString(),
       });
+
+      // Add thumbnail URI if available
+      if (thumbnailUri) {
+        params.set("thumbnailUri", thumbnailUri);
+      }
+
       router.replace(`/entry/create/${projectId}?${params.toString()}` as Href);
     } catch (error) {
       console.error("Failed to process video:", error);

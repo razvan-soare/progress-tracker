@@ -26,6 +26,9 @@ export const DEFAULT_THUMBNAIL_COMPRESSION = COMPRESSION_QUALITY.LOW;
 export const THUMBNAIL_WIDTH = 300;
 export const THUMBNAIL_HEIGHT = 300;
 
+// Thumbnail generation settings
+export const THUMBNAIL_TIME_MS = 500; // Time position to capture frame (0.5 seconds)
+
 // Image dimensions for compressed images
 export const COMPRESSED_IMAGE_MAX_WIDTH = 1920;
 export const COMPRESSED_IMAGE_MAX_HEIGHT = 1080;
