@@ -23,3 +23,4 @@ export type { PermissionType } from "./PermissionRequest";
 export { PermissionDenied } from "./PermissionDenied";
 export type { DeniedPermissionType } from "./PermissionDenied";
 export { CameraPermissionGate } from "./CameraPermissionGate";
+export { CompressionOverlay } from "./CompressionOverlay";

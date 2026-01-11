@@ -19,11 +19,18 @@ import {
   copyAsync,
   getInfoAsync,
 } from "expo-file-system/legacy";
-import { CameraPermissionGate, LoadingSpinner } from "@/components/ui";
+import { CameraPermissionGate, LoadingSpinner, CompressionOverlay } from "@/components/ui";
 import { PhotoPreview, VideoPreview } from "@/components/camera";
 import { useDebouncedPress } from "@/lib/hooks";
 import { useToast } from "@/lib/toast/ToastContext";
-import { generateId, generateVideoThumbnailSafe } from "@/lib/utils";
+import {
+  generateId,
+  generateVideoThumbnailSafe,
+  compressPhoto,
+  compressVideo,
+  calculateCompressionStats,
+  logCompressionStats,
+} from "@/lib/utils";
 
 type CaptureMode = "photo" | "video";
 
@@ -89,6 +96,7 @@ export default function CameraScreen() {
   const [videoDuration, setVideoDuration] = useState(0);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
 
   // Lock orientation to portrait on mount
   useEffect(() => {
@@ -307,14 +315,43 @@ export default function CameraScreen() {
     setVideoDuration(0);
   }, [capturedVideoUri]);
 
-  // Handle use photo - save to documents and navigate to entry creation form
+  // Handle use photo - compress and save to documents, then navigate to entry creation form
   const handleUsePhoto = useCallback(async () => {
     if (!capturedPhotoUri || !projectId) return;
 
     setIsProcessing(true);
+    setIsCompressing(true);
     try {
-      // Save photo to persistent storage
-      const savedUri = await savePhotoToDocuments(capturedPhotoUri);
+      // Compress the photo (resize to max 1920px, JPEG 0.8 quality)
+      const compressionResult = await compressPhoto(capturedPhotoUri);
+
+      if (!compressionResult.success) {
+        // Compression failed - fall back to saving original
+        console.warn("Photo compression failed, saving original:", compressionResult.error);
+        const savedUri = await savePhotoToDocuments(capturedPhotoUri);
+
+        // Delete the temporary capture file
+        try {
+          await deleteAsync(capturedPhotoUri, { idempotent: true });
+        } catch {
+          // Ignore deletion errors
+        }
+
+        // Navigate to entry creation form with media details
+        const params = new URLSearchParams({
+          mediaUri: savedUri,
+          mediaType: "photo",
+        });
+        router.replace(`/entry/create/${projectId}?${params.toString()}` as Href);
+        return;
+      }
+
+      // Log compression stats for debugging
+      const stats = calculateCompressionStats(
+        compressionResult.originalSize,
+        compressionResult.compressedSize
+      );
+      logCompressionStats("photo", stats);
 
       // Delete the temporary capture file
       try {
@@ -323,10 +360,12 @@ export default function CameraScreen() {
         // Ignore deletion errors
       }
 
-      // Navigate to entry creation form with media details
+      // Navigate to entry creation form with compressed media details
       const params = new URLSearchParams({
-        mediaUri: savedUri,
+        mediaUri: compressionResult.uri,
         mediaType: "photo",
+        originalSize: compressionResult.originalSize.toString(),
+        compressedSize: compressionResult.compressedSize.toString(),
       });
       router.replace(`/entry/create/${projectId}?${params.toString()}` as Href);
     } catch (error) {
@@ -335,25 +374,67 @@ export default function CameraScreen() {
         error instanceof Error ? error.message : "Unknown error occurred";
       showError(`Failed to process photo: ${errorMessage}`);
       setIsProcessing(false);
+      setIsCompressing(false);
     }
   }, [capturedPhotoUri, projectId, router, showError]);
 
-  // Handle use video - save to documents, generate thumbnail, and navigate to entry creation form
+  // Handle use video - compress, save to documents, generate thumbnail, and navigate to entry creation form
   const handleUseVideo = useCallback(async () => {
     if (!capturedVideoUri || !projectId) return;
 
     setIsProcessing(true);
+    setIsCompressing(true);
     try {
-      // Save video to persistent storage
-      const savedUri = await saveVideoToDocuments(capturedVideoUri);
+      // Compress/process the video
+      const compressionResult = await compressVideo(capturedVideoUri);
 
-      // Generate thumbnail from the saved video
-      // This happens before showing the preview for a better user experience
-      const thumbnailResult = await generateVideoThumbnailSafe(savedUri);
+      if (!compressionResult.success) {
+        // Compression failed - fall back to saving original
+        console.warn("Video compression failed, saving original:", compressionResult.error);
+        const savedUri = await saveVideoToDocuments(capturedVideoUri);
+
+        // Generate thumbnail from the saved video
+        const thumbnailResult = await generateVideoThumbnailSafe(savedUri);
+        const thumbnailUri = thumbnailResult.success ? thumbnailResult.uri : undefined;
+
+        if (!thumbnailResult.success) {
+          console.warn("Failed to generate thumbnail:", thumbnailResult.error);
+        }
+
+        // Delete the temporary capture file
+        try {
+          await deleteAsync(capturedVideoUri, { idempotent: true });
+        } catch {
+          // Ignore deletion errors
+        }
+
+        // Navigate to entry creation form with media details
+        const params = new URLSearchParams({
+          mediaUri: savedUri,
+          mediaType: "video",
+          durationSeconds: videoDuration.toString(),
+        });
+
+        if (thumbnailUri) {
+          params.set("thumbnailUri", thumbnailUri);
+        }
+
+        router.replace(`/entry/create/${projectId}?${params.toString()}` as Href);
+        return;
+      }
+
+      // Log compression stats for debugging
+      const stats = calculateCompressionStats(
+        compressionResult.originalSize,
+        compressionResult.compressedSize
+      );
+      logCompressionStats("video", stats);
+
+      // Generate thumbnail from the processed video
+      const thumbnailResult = await generateVideoThumbnailSafe(compressionResult.uri);
       const thumbnailUri = thumbnailResult.success ? thumbnailResult.uri : undefined;
 
       if (!thumbnailResult.success) {
-        // Log the error but don't fail - we'll use a fallback placeholder
         console.warn("Failed to generate thumbnail:", thumbnailResult.error);
       }
 
@@ -364,14 +445,15 @@ export default function CameraScreen() {
         // Ignore deletion errors
       }
 
-      // Navigate to entry creation form with media details
+      // Navigate to entry creation form with compressed media details
       const params = new URLSearchParams({
-        mediaUri: savedUri,
+        mediaUri: compressionResult.uri,
         mediaType: "video",
         durationSeconds: videoDuration.toString(),
+        originalSize: compressionResult.originalSize.toString(),
+        compressedSize: compressionResult.compressedSize.toString(),
       });
 
-      // Add thumbnail URI if available
       if (thumbnailUri) {
         params.set("thumbnailUri", thumbnailUri);
       }
@@ -383,6 +465,7 @@ export default function CameraScreen() {
         error instanceof Error ? error.message : "Unknown error occurred";
       showError(`Failed to process video: ${errorMessage}`);
       setIsProcessing(false);
+      setIsCompressing(false);
     }
   }, [capturedVideoUri, videoDuration, projectId, router, showError]);
 
@@ -393,25 +476,31 @@ export default function CameraScreen() {
   // If video is captured, show video preview
   if (capturedVideoUri) {
     return (
-      <VideoPreview
-        videoUri={capturedVideoUri}
-        durationSeconds={videoDuration}
-        onRetake={handleVideoRetake}
-        onUseVideo={handleUseVideo}
-        isLoading={isProcessing}
-      />
+      <View className="flex-1">
+        <VideoPreview
+          videoUri={capturedVideoUri}
+          durationSeconds={videoDuration}
+          onRetake={handleVideoRetake}
+          onUseVideo={handleUseVideo}
+          isLoading={isProcessing}
+        />
+        {isCompressing && <CompressionOverlay message="Preparing media..." />}
+      </View>
     );
   }
 
   // If photo is captured, show preview instead of camera
   if (capturedPhotoUri) {
     return (
-      <PhotoPreview
-        photoUri={capturedPhotoUri}
-        onRetake={handleRetake}
-        onUsePhoto={handleUsePhoto}
-        isLoading={isProcessing}
-      />
+      <View className="flex-1">
+        <PhotoPreview
+          photoUri={capturedPhotoUri}
+          onRetake={handleRetake}
+          onUsePhoto={handleUsePhoto}
+          isLoading={isProcessing}
+        />
+        {isCompressing && <CompressionOverlay message="Preparing media..." />}
+      </View>
     );
   }
 
