@@ -20,8 +20,12 @@ import {
   IconButton,
   DatePicker,
   TimePicker,
+  ErrorView,
+  FormSkeleton,
 } from "@/components/ui";
 import { useProjectsStore } from "@/lib/store";
+import { useToast } from "@/lib/toast";
+import { useBackHandler, useDebouncedPress } from "@/lib/hooks";
 import {
   formatDate,
   formatDateTime,
@@ -158,6 +162,7 @@ function LoadingSkeleton() {
 export default function EditProjectScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { showSuccess, showError } = useToast();
   const {
     fetchProjectById,
     fetchProjectStats,
@@ -276,6 +281,14 @@ export default function EditProjectScreen() {
   }, [formData.name, formData.description]);
 
   const canSave = isDirty && !hasValidationErrors && !isSaving;
+
+  // Handle Android back button
+  useBackHandler({
+    enabled: isDirty && !isSaving && !isDeleting,
+    confirmExit: true,
+    confirmTitle: "Discard Changes?",
+    confirmMessage: "You have unsaved changes. Are you sure you want to leave?",
+  });
 
   const setFormField = useCallback(
     <K extends keyof FormData>(field: K, value: FormData[K]) => {
@@ -434,10 +447,11 @@ export default function EditProjectScreen() {
       setFormField("coverImageUri", result.uri);
     } else if (!result.cancelled) {
       setError(result.error);
+      showError(result.error || "Failed to take photo");
     }
 
     setIsLoadingImage(false);
-  }, [setFormField]);
+  }, [setFormField, showError]);
 
   const handleChooseFromLibrary = useCallback(async () => {
     setIsLoadingImage(true);
@@ -449,10 +463,11 @@ export default function EditProjectScreen() {
       setFormField("coverImageUri", result.uri);
     } else if (!result.cancelled) {
       setError(result.error);
+      showError(result.error || "Failed to pick image");
     }
 
     setIsLoadingImage(false);
-  }, [setFormField]);
+  }, [setFormField, showError]);
 
   const handleRemoveImage = useCallback(async () => {
     if (formData.coverImageUri && formData.coverImageUri !== originalData?.coverImageUri) {
@@ -494,16 +509,18 @@ export default function EditProjectScreen() {
 
       await addToSyncQueue(id, "update");
 
+      showSuccess("Project updated successfully");
       // Navigate back to project detail
       router.back();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to save changes";
       setError(message);
+      showError(message);
     } finally {
       setIsSaving(false);
     }
-  }, [id, canSave, formData, updateProject, router]);
+  }, [id, canSave, formData, updateProject, router, showSuccess, showError]);
 
   const handleDelete = useCallback(() => {
     if (!id) return;
@@ -551,15 +568,17 @@ export default function EditProjectScreen() {
       await deleteProject(id);
       await addToSyncQueue(id, "delete");
 
+      showSuccess("Project deleted");
       // Navigate to home
       router.replace("/");
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to delete project";
       setError(message);
+      showError(message);
       setIsDeleting(false);
     }
-  }, [id, deleteProject, router]);
+  }, [id, deleteProject, router, showSuccess, showError]);
 
   if (isLoading) {
     return <LoadingSkeleton />;

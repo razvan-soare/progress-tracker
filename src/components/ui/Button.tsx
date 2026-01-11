@@ -14,6 +14,8 @@ export function Button({
   loading = false,
   disabled,
   className = "",
+  accessibilityLabel,
+  accessibilityHint,
   ...props
 }: ButtonProps) {
   const isDisabled = disabled || loading;
@@ -36,6 +38,11 @@ export function Button({
     <Pressable
       disabled={isDisabled}
       className={`${baseStyles} ${variantStyles[variant]} ${disabledStyles} ${className}`}
+      style={{ minHeight: 48 }}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || (loading ? `${title}, loading` : title)}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: isDisabled }}
       {...props}
     >
       {loading ? (

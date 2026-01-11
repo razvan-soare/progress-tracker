@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -7,13 +7,17 @@ import {
   Pressable,
   Switch,
   RefreshControl,
+  Animated,
+  AccessibilityInfo,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { IconButton, Button, Card } from "@/components/ui";
+import { IconButton, Button, Card, ErrorView, ProjectDetailSkeleton } from "@/components/ui";
 import { RecentEntries, ProgressComparison } from "@/components/entry";
 import { useProjectsStore, useEntriesStore } from "@/lib/store";
+import { useToast } from "@/lib/toast";
+import { useDebouncedPress } from "@/lib/hooks";
 import { colors } from "@/constants/colors";
 import type { ProjectCategory } from "@/types";
 import type { ProjectStats } from "@/lib/store";
@@ -84,6 +88,13 @@ function formatDaysList(days: string[]): string {
     fri: "Fri",
     sat: "Sat",
     sun: "Sun",
+    Mon: "Mon",
+    Tue: "Tue",
+    Wed: "Wed",
+    Thu: "Thu",
+    Fri: "Fri",
+    Sat: "Sat",
+    Sun: "Sun",
   };
 
   return days.map((d) => dayLabels[d] || d).join(", ");
@@ -93,62 +104,57 @@ interface StatCardProps {
   icon: string;
   value: string | number;
   label: string;
+  accessibilityLabel?: string;
 }
 
-function StatCard({ icon, value, label }: StatCardProps) {
+function StatCard({ icon, value, label, accessibilityLabel }: StatCardProps) {
   return (
-    <View className="bg-surface rounded-xl p-4 flex-1 min-w-[100px]">
-      <Text className="text-2xl mb-2">{icon}</Text>
+    <View
+      className="bg-surface rounded-xl p-4 flex-1 min-w-[100px]"
+      accessibilityLabel={accessibilityLabel || `${label}: ${value}`}
+      accessibilityRole="text"
+    >
+      <Text className="text-2xl mb-2" accessibilityElementsHidden>
+        {icon}
+      </Text>
       <Text className="text-text-primary text-xl font-bold">{value}</Text>
       <Text className="text-text-secondary text-xs mt-1">{label}</Text>
     </View>
   );
 }
 
-function LoadingSkeleton() {
+function AnimatedFadeIn({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(10)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        delay,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 300,
+        delay,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnim, translateY, delay]);
+
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      {/* Cover Image Skeleton */}
-      <View className="aspect-video bg-surface" />
-
-      {/* Content Skeleton */}
-      <View className="px-4 py-4">
-        <View className="w-48 h-8 bg-surface rounded mb-2" />
-        <View className="w-full h-4 bg-surface rounded mb-4" />
-        <View className="w-24 h-6 bg-surface rounded-full" />
-      </View>
-
-      {/* Stats Skeleton */}
-      <View className="px-4 pb-4">
-        <View className="w-20 h-3 bg-surface rounded mb-3" />
-        <View className="flex-row gap-3 mb-3">
-          <View className="flex-1 h-24 bg-surface rounded-xl" />
-          <View className="flex-1 h-24 bg-surface rounded-xl" />
-          <View className="flex-1 h-24 bg-surface rounded-xl" />
-        </View>
-        <View className="flex-row gap-3">
-          <View className="flex-1 h-24 bg-surface rounded-xl" />
-          <View className="flex-1 h-24 bg-surface rounded-xl" />
-          <View className="flex-1 h-24 bg-surface rounded-xl" />
-        </View>
-      </View>
-
-      {/* Action Buttons Skeleton */}
-      <View className="px-4 pb-4">
-        <View className="w-24 h-3 bg-surface rounded mb-3" />
-        <View className="w-full h-14 bg-surface rounded-xl mb-3" />
-        <View className="flex-row gap-3">
-          <View className="flex-1 h-12 bg-surface rounded-xl" />
-          <View className="flex-1 h-12 bg-surface rounded-xl" />
-        </View>
-      </View>
-    </SafeAreaView>
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY }] }}>
+      {children}
+    </Animated.View>
   );
 }
 
 export default function ProjectDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { showError, showSuccess } = useToast();
   const {
     fetchProjectById,
     fetchProjectStats,
@@ -160,8 +166,10 @@ export default function ProjectDetailScreen() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reminderEnabled, setReminderEnabled] = useState(true);
+  const fabScale = useRef(new Animated.Value(0)).current;
 
   const project = id ? projectsById[id] : null;
   const stats = id ? projectStats[id] : null;
@@ -173,12 +181,13 @@ export default function ProjectDetailScreen() {
 
   const loadProject = useCallback(async () => {
     if (!id) {
-      setError("Project not found");
+      setError("Invalid project ID");
       setIsLoading(false);
       return;
     }
 
     try {
+      setError(null);
       const fetched = await fetchProjectById(id);
       if (!fetched) {
         setError("Project not found");
@@ -191,8 +200,9 @@ export default function ProjectDetailScreen() {
           Boolean(fetched.reminderTime && fetched.reminderDays?.length)
         );
       }
-    } catch {
-      setError("Failed to load project");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load project";
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -202,66 +212,107 @@ export default function ProjectDetailScreen() {
     loadProject();
   }, [loadProject]);
 
+  // Animate FAB after content loads
+  useEffect(() => {
+    if (!isLoading && project && (stats?.totalEntries ?? 0) > 0) {
+      Animated.spring(fabScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 7,
+        delay: 300,
+      }).start();
+    }
+  }, [isLoading, project, stats, fabScale]);
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
+    setError(null);
     await loadProject();
     setIsRefreshing(false);
   };
 
-  const handleBack = () => {
-    router.back();
+  const handleRetry = async () => {
+    setIsRetrying(true);
+    await loadProject();
+    setIsRetrying(false);
   };
 
-  const handleGoHome = () => {
-    router.replace("/");
-  };
+  const handleBack = useDebouncedPress(
+    useCallback(() => {
+      router.back();
+    }, [router]),
+    300
+  );
 
-  const handleEdit = () => {
-    router.push(`/project/edit/${id}` as Href);
-  };
+  const handleGoHome = useDebouncedPress(
+    useCallback(() => {
+      router.replace("/");
+    }, [router]),
+    300
+  );
 
-  const handleAddEntry = () => {
-    router.push(`/entry/create?projectId=${id}` as Href);
-  };
+  const handleEdit = useDebouncedPress(
+    useCallback(() => {
+      router.push(`/project/edit/${id}` as Href);
+    }, [router, id]),
+    300
+  );
 
-  const handleViewTimeline = () => {
-    router.push(`/project/${id}/timeline` as Href);
-  };
+  const handleAddEntry = useDebouncedPress(
+    useCallback(() => {
+      router.push(`/entry/create?projectId=${id}` as Href);
+    }, [router, id]),
+    300
+  );
 
-  const handleViewReports = () => {
-    router.push(`/project/${id}/reports` as Href);
-  };
+  const handleViewTimeline = useDebouncedPress(
+    useCallback(() => {
+      router.push(`/project/${id}/timeline` as Href);
+    }, [router, id]),
+    300
+  );
+
+  const handleViewReports = useDebouncedPress(
+    useCallback(() => {
+      router.push(`/project/${id}/reports` as Href);
+    }, [router, id]),
+    300
+  );
 
   const handleToggleReminder = async (value: boolean) => {
     if (!project || !id) return;
 
+    const previousValue = reminderEnabled;
     setReminderEnabled(value);
 
     if (!value) {
-      // Disable reminders by clearing reminder settings
       try {
         await updateProject(id, {
           reminderTime: undefined,
           reminderDays: undefined,
         });
+        showSuccess("Reminders disabled");
       } catch {
-        // Revert on error
-        setReminderEnabled(true);
+        setReminderEnabled(previousValue);
+        showError("Failed to update reminder settings");
       }
     } else {
-      // Re-enable with default settings if previously cleared
-      // For now, just navigate to edit screen to configure
       router.push(`/project/edit/${id}` as Href);
     }
   };
 
   if (isLoading) {
-    return <LoadingSkeleton />;
+    return (
+      <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
+        <ProjectDetailSkeleton />
+      </SafeAreaView>
+    );
   }
 
   if (error || !project) {
     return (
-      <SafeAreaView className="flex-1 bg-background">
+      <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
         <View className="flex-row items-center px-4 py-3 border-b border-border">
           <IconButton
             icon="←"
@@ -271,16 +322,22 @@ export default function ProjectDetailScreen() {
             accessibilityLabel="Back to home"
           />
         </View>
-        <View className="flex-1 items-center justify-center px-4">
-          <Text className="text-5xl mb-4">😕</Text>
-          <Text className="text-text-primary text-lg font-semibold text-center mb-2">
-            Project Not Found
-          </Text>
-          <Text className="text-text-secondary text-center mb-6">
-            {error || "The project you're looking for doesn't exist."}
-          </Text>
-          <Button title="Go to Home" onPress={handleGoHome} />
-        </View>
+        <ErrorView
+          title="Project Not Found"
+          message={error || "The project you're looking for doesn't exist or may have been deleted."}
+          icon="📂"
+          onRetry={error?.includes("Failed") ? handleRetry : undefined}
+          isRetrying={isRetrying}
+        />
+        {!error?.includes("Failed") && (
+          <View className="px-4 pb-6">
+            <Button
+              title="Go to Home"
+              onPress={handleGoHome}
+              variant="primary"
+            />
+          </View>
+        )}
       </SafeAreaView>
     );
   }
@@ -305,6 +362,7 @@ export default function ProjectDetailScreen() {
             tintColor={colors.primary}
           />
         }
+        accessibilityRole="scrollbar"
       >
         {/* Hero Cover Image with Overlay */}
         <View className="aspect-video relative">
@@ -313,6 +371,8 @@ export default function ProjectDetailScreen() {
               source={{ uri: project.coverImageUri }}
               className="w-full h-full"
               resizeMode="cover"
+              accessibilityLabel={`Cover image for ${project.name}`}
+              accessibilityIgnoresInvertColors
             />
           ) : (
             <LinearGradient
@@ -321,7 +381,9 @@ export default function ProjectDetailScreen() {
               end={{ x: 1, y: 1 }}
               className="flex-1 items-center justify-center"
             >
-              <Text className="text-6xl opacity-50">{categoryIcon}</Text>
+              <Text className="text-6xl opacity-50" accessibilityElementsHidden>
+                {categoryIcon}
+              </Text>
             </LinearGradient>
           )}
 
@@ -336,7 +398,9 @@ export default function ProjectDetailScreen() {
           <View className="absolute top-4 left-4">
             <Pressable
               onPress={handleBack}
-              className="w-10 h-10 bg-black/50 rounded-full items-center justify-center"
+              className="w-11 h-11 bg-black/50 rounded-full items-center justify-center active:opacity-70"
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
             >
               <Text className="text-white text-lg">←</Text>
             </Pressable>
@@ -346,7 +410,9 @@ export default function ProjectDetailScreen() {
           <View className="absolute top-4 right-4">
             <Pressable
               onPress={handleEdit}
-              className="w-10 h-10 bg-black/50 rounded-full items-center justify-center"
+              className="w-11 h-11 bg-black/50 rounded-full items-center justify-center active:opacity-70"
+              accessibilityRole="button"
+              accessibilityLabel="Edit project"
             >
               <Text className="text-lg">✏️</Text>
             </Pressable>
@@ -354,166 +420,225 @@ export default function ProjectDetailScreen() {
         </View>
 
         {/* Project Info */}
-        <View className="px-4 py-4">
-          {/* Project Name */}
-          <Text className="text-text-primary text-2xl font-bold">
-            {project.name}
-          </Text>
-
-          {/* Description */}
-          {project.description && (
-            <Text className="text-text-secondary text-base mt-2">
-              {project.description}
+        <AnimatedFadeIn>
+          <View className="px-4 py-4">
+            {/* Project Name */}
+            <Text
+              className="text-text-primary text-2xl font-bold"
+              accessibilityRole="header"
+              numberOfLines={2}
+              ellipsizeMode="tail"
+            >
+              {project.name}
             </Text>
-          )}
 
-          {/* Category Badge */}
-          <View className="flex-row items-center mt-3">
-            <View className="bg-surface rounded-full px-3 py-1.5 flex-row items-center">
-              <Text className="mr-1.5">{categoryIcon}</Text>
-              <Text className="text-text-secondary text-sm">{categoryLabel}</Text>
+            {/* Description */}
+            {project.description && (
+              <Text className="text-text-secondary text-base mt-2">
+                {project.description}
+              </Text>
+            )}
+
+            {/* Category Badge */}
+            <View className="flex-row items-center mt-3">
+              <View
+                className="bg-surface rounded-full px-3 py-1.5 flex-row items-center"
+                accessibilityLabel={`Category: ${categoryLabel}`}
+              >
+                <Text className="mr-1.5" accessibilityElementsHidden>
+                  {categoryIcon}
+                </Text>
+                <Text className="text-text-secondary text-sm">{categoryLabel}</Text>
+              </View>
             </View>
           </View>
-        </View>
+        </AnimatedFadeIn>
 
         {/* Statistics Grid */}
-        <View className="px-4 pb-4">
-          <Text className="text-text-secondary text-xs uppercase tracking-wide mb-3 font-medium">
-            Statistics
-          </Text>
+        <AnimatedFadeIn delay={50}>
+          <View className="px-4 pb-4">
+            <Text
+              className="text-text-secondary text-xs uppercase tracking-wide mb-3 font-medium"
+              accessibilityRole="header"
+            >
+              Statistics
+            </Text>
 
-          {/* First row: Main stats */}
-          <View className="flex-row gap-3 mb-3">
-            <StatCard
-              icon="📝"
-              value={stats?.totalEntries ?? 0}
-              label="Total Entries"
-            />
-            <StatCard
-              icon="📅"
-              value={stats?.daysSinceStart ?? 0}
-              label="Days Active"
-            />
-            <StatCard
-              icon="🔥"
-              value={stats?.streakCount ?? 0}
-              label="Current Streak"
-            />
-          </View>
+            {/* First row: Main stats */}
+            <View className="flex-row gap-3 mb-3">
+              <StatCard
+                icon="📝"
+                value={stats?.totalEntries ?? 0}
+                label="Total Entries"
+                accessibilityLabel={`${stats?.totalEntries ?? 0} total entries`}
+              />
+              <StatCard
+                icon="📅"
+                value={stats?.daysSinceStart ?? 0}
+                label="Days Active"
+                accessibilityLabel={`${stats?.daysSinceStart ?? 0} days active`}
+              />
+              <StatCard
+                icon="🔥"
+                value={stats?.streakCount ?? 0}
+                label="Current Streak"
+                accessibilityLabel={`Current streak: ${stats?.streakCount ?? 0} days`}
+              />
+            </View>
 
-          {/* Second row: Additional stats */}
-          <View className="flex-row gap-3">
-            <StatCard
-              icon="🏆"
-              value={stats?.longestStreak ?? 0}
-              label="Best Streak"
-            />
-            <StatCard
-              icon="🚀"
-              value={formatDate(stats?.firstEntryDate ?? null)}
-              label="First Entry"
-            />
-            <StatCard
-              icon="⏱️"
-              value={formatRelativeDate(stats?.lastEntryDate ?? null)}
-              label="Last Entry"
-            />
+            {/* Second row: Additional stats */}
+            <View className="flex-row gap-3">
+              <StatCard
+                icon="🏆"
+                value={stats?.longestStreak ?? 0}
+                label="Best Streak"
+                accessibilityLabel={`Best streak: ${stats?.longestStreak ?? 0} days`}
+              />
+              <StatCard
+                icon="🚀"
+                value={formatDate(stats?.firstEntryDate ?? null)}
+                label="First Entry"
+                accessibilityLabel={`First entry: ${formatDate(stats?.firstEntryDate ?? null)}`}
+              />
+              <StatCard
+                icon="⏱️"
+                value={formatRelativeDate(stats?.lastEntryDate ?? null)}
+                label="Last Entry"
+                accessibilityLabel={`Last entry: ${formatRelativeDate(stats?.lastEntryDate ?? null)}`}
+              />
+            </View>
           </View>
-        </View>
+        </AnimatedFadeIn>
 
         {/* Quick Actions */}
-        <View className="px-4 pb-4">
-          <Text className="text-text-secondary text-xs uppercase tracking-wide mb-3 font-medium">
-            Quick Actions
-          </Text>
-
-          {/* Primary Action - Add Entry */}
-          <Pressable
-            onPress={handleAddEntry}
-            className="bg-primary rounded-xl py-4 flex-row items-center justify-center mb-3 active:opacity-80"
-          >
-            <Text className="text-xl mr-2">➕</Text>
-            <Text className="text-white text-base font-semibold">Add Entry</Text>
-          </Pressable>
-
-          {/* Secondary Actions */}
-          <View className="flex-row gap-3">
-            <Pressable
-              onPress={handleViewTimeline}
-              className="flex-1 bg-surface rounded-xl py-3 flex-row items-center justify-center active:opacity-80"
+        <AnimatedFadeIn delay={100}>
+          <View className="px-4 pb-4">
+            <Text
+              className="text-text-secondary text-xs uppercase tracking-wide mb-3 font-medium"
+              accessibilityRole="header"
             >
-              <Text className="mr-2">📋</Text>
-              <Text className="text-text-primary text-sm font-medium">
-                Timeline
+              Quick Actions
+            </Text>
+
+            {/* Primary Action - Add Entry */}
+            <Pressable
+              onPress={handleAddEntry}
+              className="bg-primary rounded-xl py-4 flex-row items-center justify-center mb-3 active:opacity-80"
+              accessibilityRole="button"
+              accessibilityLabel="Add a new entry"
+              accessibilityHint="Opens the entry creation screen"
+              style={{ minHeight: 56 }}
+            >
+              <Text className="text-xl mr-2" accessibilityElementsHidden>
+                ➕
               </Text>
+              <Text className="text-white text-base font-semibold">Add Entry</Text>
             </Pressable>
 
-            <Pressable
-              onPress={handleViewReports}
-              className="flex-1 bg-surface rounded-xl py-3 flex-row items-center justify-center active:opacity-80"
-            >
-              <Text className="mr-2">📊</Text>
-              <Text className="text-text-primary text-sm font-medium">
-                Reports
-              </Text>
-            </Pressable>
+            {/* Secondary Actions */}
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={handleViewTimeline}
+                className="flex-1 bg-surface rounded-xl py-3 flex-row items-center justify-center active:opacity-80"
+                accessibilityRole="button"
+                accessibilityLabel="View timeline"
+                style={{ minHeight: 48 }}
+              >
+                <Text className="mr-2" accessibilityElementsHidden>
+                  📋
+                </Text>
+                <Text className="text-text-primary text-sm font-medium">
+                  Timeline
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleViewReports}
+                className="flex-1 bg-surface rounded-xl py-3 flex-row items-center justify-center active:opacity-80"
+                accessibilityRole="button"
+                accessibilityLabel="View reports"
+                style={{ minHeight: 48 }}
+              >
+                <Text className="mr-2" accessibilityElementsHidden>
+                  📊
+                </Text>
+                <Text className="text-text-primary text-sm font-medium">
+                  Reports
+                </Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
+        </AnimatedFadeIn>
 
         {/* Entry Preview Section */}
-        {entries.length === 0 ? (
-          /* Empty State for No Entries */
-          <View className="px-4 pb-6">
-            <Card className="p-6 items-center">
-              <Text className="text-4xl mb-3">🎬</Text>
-              <Text className="text-text-primary font-semibold text-center text-lg">
-                Record your first entry
-              </Text>
-              <Text className="text-text-secondary text-sm text-center mt-2 mb-1">
-                Small daily records reveal big progress over time
-              </Text>
-              <View className="flex-row items-center justify-center mt-2 mb-4">
-                <Text className="text-text-secondary text-2xl mr-2">↑</Text>
-                <Text className="text-text-secondary text-sm italic">
-                  Use the Add Entry button above
+        <AnimatedFadeIn delay={150}>
+          {entries.length === 0 ? (
+            /* Empty State for No Entries */
+            <View className="px-4 pb-6">
+              <Card className="p-6 items-center">
+                <Text className="text-4xl mb-3" accessibilityElementsHidden>
+                  🎬
                 </Text>
-              </View>
-            </Card>
-          </View>
-        ) : (
-          <>
-            {/* Recent Entries Section */}
-            <RecentEntries
-              entries={entries}
-              projectId={id!}
-              maxEntries={10}
-              onSeeAll={handleViewTimeline}
-            />
-
-            {/* Progress Comparison Teaser */}
-            {firstEntry && latestEntry && entries.length >= 2 && (
-              <ProgressComparison
-                firstEntry={firstEntry}
-                latestEntry={latestEntry}
+                <Text
+                  className="text-text-primary font-semibold text-center text-lg"
+                  accessibilityRole="header"
+                >
+                  Record your first entry
+                </Text>
+                <Text className="text-text-secondary text-sm text-center mt-2 mb-1">
+                  Small daily records reveal big progress over time
+                </Text>
+                <View
+                  className="flex-row items-center justify-center mt-2 mb-4"
+                  accessibilityElementsHidden
+                >
+                  <Text className="text-text-secondary text-2xl mr-2">↑</Text>
+                  <Text className="text-text-secondary text-sm italic">
+                    Use the Add Entry button above
+                  </Text>
+                </View>
+              </Card>
+            </View>
+          ) : (
+            <>
+              {/* Recent Entries Section */}
+              <RecentEntries
+                entries={entries}
                 projectId={id!}
-                onPress={handleViewReports}
+                maxEntries={10}
+                onSeeAll={handleViewTimeline}
               />
-            )}
-          </>
-        )}
+
+              {/* Progress Comparison Teaser */}
+              {firstEntry && latestEntry && entries.length >= 2 && (
+                <ProgressComparison
+                  firstEntry={firstEntry}
+                  latestEntry={latestEntry}
+                  projectId={id!}
+                  onPress={handleViewReports}
+                />
+              )}
+            </>
+          )}
+        </AnimatedFadeIn>
 
         {/* Reminders Section */}
-        <View className="px-4 pb-6">
-          <Text className="text-text-secondary text-xs uppercase tracking-wide mb-3 font-medium">
-            Reminders
-          </Text>
+        <AnimatedFadeIn delay={200}>
+          <View className="px-4 pb-6">
+            <Text
+              className="text-text-secondary text-xs uppercase tracking-wide mb-3 font-medium"
+              accessibilityRole="header"
+            >
+              Reminders
+            </Text>
 
-          <Card className="p-4">
-            {hasReminder ? (
-              <>
+            <Card className="p-4">
+              {hasReminder ? (
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center flex-1">
-                    <Text className="text-2xl mr-3">🔔</Text>
+                    <Text className="text-2xl mr-3" accessibilityElementsHidden>
+                      🔔
+                    </Text>
                     <View className="flex-1">
                       <Text className="text-text-primary font-medium">
                         {project.reminderTime}
@@ -531,31 +656,44 @@ export default function ProjectDetailScreen() {
                       true: colors.primary,
                     }}
                     thumbColor={colors.textPrimary}
+                    accessibilityLabel={`Reminders ${reminderEnabled ? "enabled" : "disabled"}`}
+                    accessibilityHint="Toggle to enable or disable reminders"
                   />
                 </View>
-              </>
-            ) : (
-              <Pressable
-                onPress={() => router.push(`/project/edit/${id}` as Href)}
-                className="flex-row items-center"
-              >
-                <Text className="text-2xl mr-3 opacity-50">🔕</Text>
-                <View className="flex-1">
-                  <Text className="text-text-secondary">No reminders set</Text>
-                  <Text className="text-primary text-sm mt-0.5">
-                    Tap to configure
+              ) : (
+                <Pressable
+                  onPress={() => router.push(`/project/edit/${id}` as Href)}
+                  className="flex-row items-center active:opacity-70"
+                  accessibilityRole="button"
+                  accessibilityLabel="Set up reminders"
+                  accessibilityHint="Opens project edit screen to configure reminders"
+                  style={{ minHeight: 44 }}
+                >
+                  <Text className="text-2xl mr-3 opacity-50" accessibilityElementsHidden>
+                    🔕
                   </Text>
-                </View>
-                <Text className="text-text-secondary text-xl">›</Text>
-              </Pressable>
-            )}
-          </Card>
-        </View>
+                  <View className="flex-1">
+                    <Text className="text-text-secondary">No reminders set</Text>
+                    <Text className="text-primary text-sm mt-0.5">
+                      Tap to configure
+                    </Text>
+                  </View>
+                  <Text className="text-text-secondary text-xl" accessibilityElementsHidden>
+                    ›
+                  </Text>
+                </Pressable>
+              )}
+            </Card>
+          </View>
+        </AnimatedFadeIn>
       </ScrollView>
 
       {/* Floating Add Entry Button */}
       {(stats?.totalEntries ?? 0) > 0 && (
-        <View className="absolute bottom-6 right-6">
+        <Animated.View
+          className="absolute bottom-6 right-6"
+          style={{ transform: [{ scale: fabScale }] }}
+        >
           <Pressable
             onPress={handleAddEntry}
             className="w-14 h-14 bg-primary rounded-full items-center justify-center shadow-lg active:opacity-80"
@@ -566,10 +704,13 @@ export default function ProjectDetailScreen() {
               shadowRadius: 8,
               elevation: 8,
             }}
+            accessibilityRole="button"
+            accessibilityLabel="Add entry"
+            accessibilityHint="Opens entry creation screen"
           >
             <Text className="text-white text-2xl">+</Text>
           </Pressable>
-        </View>
+        </Animated.View>
       )}
     </SafeAreaView>
   );

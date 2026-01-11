@@ -1,4 +1,5 @@
-import { View, Text, Image, Pressable } from "react-native";
+import { useRef, useCallback } from "react";
+import { View, Text, Image, Pressable, Animated } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import type { Project, ProjectCategory } from "@/types";
 
@@ -70,98 +71,143 @@ export function ProjectCard({
   hasPendingUploads = false,
   onPress,
 }: ProjectCardProps) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
   const categoryIcon = CATEGORY_ICONS[project.category] || "📁";
   const categoryLabel = CATEGORY_LABELS[project.category] || "Custom";
   const gradientColors = CATEGORY_GRADIENTS[project.category] || CATEGORY_GRADIENTS.custom;
   const daysSinceStart = calculateDaysSinceStart(project.startDate);
   const relativeLastEntry = formatRelativeDate(lastEntryDate);
 
+  const handlePressIn = useCallback(() => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 10,
+    }).start();
+  }, [scaleAnim]);
+
+  const handlePressOut = useCallback(() => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 10,
+    }).start();
+  }, [scaleAnim]);
+
+  // Build accessibility label
+  const accessibilityLabel = `${project.name}, ${categoryLabel} project, ${entryCount} ${entryCount === 1 ? "entry" : "entries"}, ${daysSinceStart} days active${currentStreak > 0 ? `, ${currentStreak} day streak` : ""}, last entry ${relativeLastEntry}${hasPendingUploads ? ", has pending uploads" : ""}`;
+
   return (
     <Pressable
       onPress={onPress}
-      className="mb-3 rounded-xl overflow-hidden active:opacity-80 active:scale-[0.98]"
-      style={{ transform: [{ scale: 1 }] }}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint="Double tap to view project details"
     >
-      {/* Cover Image or Gradient Placeholder */}
-      <View className="h-32 relative">
-        {project.coverImageUri ? (
-          <Image
-            source={{ uri: project.coverImageUri }}
-            className="w-full h-full"
-            resizeMode="cover"
-          />
-        ) : (
+      <Animated.View
+        className="mb-3 rounded-xl overflow-hidden"
+        style={{ transform: [{ scale: scaleAnim }] }}
+      >
+        {/* Cover Image or Gradient Placeholder */}
+        <View className="h-32 relative">
+          {project.coverImageUri ? (
+            <Image
+              source={{ uri: project.coverImageUri }}
+              className="w-full h-full"
+              resizeMode="cover"
+              accessibilityIgnoresInvertColors
+            />
+          ) : (
+            <LinearGradient
+              colors={gradientColors}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              className="w-full h-full items-center justify-center"
+            >
+              <Text className="text-5xl opacity-30" accessibilityElementsHidden>
+                {categoryIcon}
+              </Text>
+            </LinearGradient>
+          )}
+
+          {/* Overlay gradient for text readability */}
           <LinearGradient
-            colors={gradientColors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            className="w-full h-full items-center justify-center"
-          >
-            <Text className="text-5xl opacity-30">{categoryIcon}</Text>
-          </LinearGradient>
-        )}
+            colors={["transparent", "rgba(0,0,0,0.8)"]}
+            className="absolute inset-0"
+          />
 
-        {/* Overlay gradient for text readability */}
-        <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.8)"]}
-          className="absolute inset-0"
-        />
+          {/* Category Badge */}
+          <View className="absolute top-3 left-3" accessibilityElementsHidden>
+            <View className="bg-black/50 px-2 py-1 rounded-full flex-row items-center">
+              <Text className="text-xs mr-1">{categoryIcon}</Text>
+              <Text className="text-text-primary text-xs font-medium">
+                {categoryLabel}
+              </Text>
+            </View>
+          </View>
 
-        {/* Category Badge */}
-        <View className="absolute top-3 left-3">
-          <View className="bg-black/50 px-2 py-1 rounded-full flex-row items-center">
-            <Text className="text-xs mr-1">{categoryIcon}</Text>
-            <Text className="text-text-primary text-xs font-medium">
-              {categoryLabel}
+          {/* Pending Uploads Indicator */}
+          {hasPendingUploads && (
+            <View
+              className="absolute top-3 right-3"
+              accessibilityLabel="Has pending uploads"
+            >
+              <View className="bg-warning/80 px-2 py-1 rounded-full">
+                <Text className="text-xs">🔄</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Project Name */}
+          <View className="absolute bottom-3 left-3 right-3">
+            <Text
+              className="text-text-primary text-xl font-bold"
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              accessibilityRole="header"
+            >
+              {project.name}
             </Text>
           </View>
         </View>
 
-        {/* Pending Uploads Indicator */}
-        {hasPendingUploads && (
-          <View className="absolute top-3 right-3">
-            <View className="bg-warning/80 px-2 py-1 rounded-full">
-              <Text className="text-xs">🔄</Text>
+        {/* Stats Section */}
+        <View className="bg-surface px-3 py-3">
+          {/* Quick Stats Row */}
+          <View
+            className="flex-row items-center justify-between mb-2"
+            accessibilityElementsHidden
+          >
+            <View className="flex-row items-center">
+              <StatItem icon="📝" value={entryCount} label="entries" />
+              <View className="w-px h-4 bg-border mx-3" />
+              <StatItem icon="📅" value={daysSinceStart} label="days" />
+              {currentStreak > 0 && (
+                <>
+                  <View className="w-px h-4 bg-border mx-3" />
+                  <StatItem icon="🔥" value={currentStreak} label="streak" />
+                </>
+              )}
             </View>
           </View>
-        )}
 
-        {/* Project Name */}
-        <View className="absolute bottom-3 left-3 right-3">
-          <Text
-            className="text-text-primary text-xl font-bold"
-            numberOfLines={1}
+          {/* Last Entry Date */}
+          <View
+            className="flex-row items-center justify-between"
+            accessibilityElementsHidden
           >
-            {project.name}
-          </Text>
-        </View>
-      </View>
-
-      {/* Stats Section */}
-      <View className="bg-surface px-3 py-3">
-        {/* Quick Stats Row */}
-        <View className="flex-row items-center justify-between mb-2">
-          <View className="flex-row items-center">
-            <StatItem icon="📝" value={entryCount} label="entries" />
-            <View className="w-px h-4 bg-border mx-3" />
-            <StatItem icon="📅" value={daysSinceStart} label="days" />
-            {currentStreak > 0 && (
-              <>
-                <View className="w-px h-4 bg-border mx-3" />
-                <StatItem icon="🔥" value={currentStreak} label="streak" />
-              </>
-            )}
+            <Text className="text-text-secondary text-xs">
+              Last entry: {relativeLastEntry}
+            </Text>
+            <Text className="text-text-secondary text-xl">›</Text>
           </View>
         </View>
-
-        {/* Last Entry Date */}
-        <View className="flex-row items-center justify-between">
-          <Text className="text-text-secondary text-xs">
-            Last entry: {relativeLastEntry}
-          </Text>
-          <Text className="text-text-secondary text-xl">›</Text>
-        </View>
-      </View>
+      </Animated.View>
     </Pressable>
   );
 }

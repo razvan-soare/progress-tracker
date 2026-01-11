@@ -15,13 +15,15 @@ export function IconButton({
   size = "md",
   disabled,
   className = "",
+  accessibilityLabel,
   ...props
 }: IconButtonProps) {
   const baseStyles = "items-center justify-center rounded-full";
 
+  // Visual size of the button - minimum 44pt for accessibility
   const sizeStyles: Record<IconButtonSize, string> = {
-    sm: "w-8 h-8",
-    md: "w-10 h-10",
+    sm: "w-9 h-9",
+    md: "w-11 h-11",
     lg: "w-12 h-12",
   };
 
@@ -49,9 +51,16 @@ export function IconButton({
     <Pressable
       disabled={disabled}
       className={`${baseStyles} ${sizeStyles[size]} ${variantStyles[variant]} ${disabledStyles} ${className}`}
+      style={{ minWidth: 44, minHeight: 44 }}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled: disabled ?? false }}
       {...props}
     >
-      <Text className={`${iconSizeStyles[size]} ${iconColorStyles[variant]}`}>
+      <Text
+        className={`${iconSizeStyles[size]} ${iconColorStyles[variant]}`}
+        accessibilityElementsHidden
+      >
         {icon}
       </Text>
     </Pressable>
