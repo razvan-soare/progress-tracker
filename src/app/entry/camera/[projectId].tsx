@@ -1,23 +1,58 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, Animated } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { CameraView, CameraType } from "expo-camera";
 import * as ScreenOrientation from "expo-screen-orientation";
+import {
+  deleteAsync,
+  documentDirectory,
+  makeDirectoryAsync,
+  copyAsync,
+  getInfoAsync,
+} from "expo-file-system/legacy";
 import { CameraPermissionGate, LoadingSpinner } from "@/components/ui";
+import { PhotoPreview } from "@/components/camera";
 import { useDebouncedPress } from "@/lib/hooks";
+import { useToast } from "@/lib/toast/ToastContext";
+import { useEntriesStore } from "@/lib/store";
+import { generateId } from "@/lib/utils";
 
 type CaptureMode = "photo" | "video";
 
+const IMAGES_DIRECTORY = `${documentDirectory}images/`;
+
+async function ensureImagesDirectory(): Promise<void> {
+  const dirInfo = await getInfoAsync(IMAGES_DIRECTORY);
+  if (!dirInfo.exists) {
+    await makeDirectoryAsync(IMAGES_DIRECTORY, { intermediates: true });
+  }
+}
+
+async function savePhotoToDocuments(sourceUri: string): Promise<string> {
+  await ensureImagesDirectory();
+  const fileExtension = sourceUri.split(".").pop()?.toLowerCase() || "jpg";
+  const fileName = `${generateId()}.${fileExtension}`;
+  const destinationUri = `${IMAGES_DIRECTORY}${fileName}`;
+  await copyAsync({ from: sourceUri, to: destinationUri });
+  return destinationUri;
+}
+
 export default function CameraScreen() {
   const router = useRouter();
-  const { projectId: _projectId } = useLocalSearchParams<{ projectId: string }>();
+  const { projectId } = useLocalSearchParams<{ projectId: string }>();
   const cameraRef = useRef<CameraView>(null);
+  const { showError, showSuccess } = useToast();
+  const createEntry = useEntriesStore((state) => state.createEntry);
+  const flashOpacity = useRef(new Animated.Value(0)).current;
 
   const [facing, setFacing] = useState<CameraType>("back");
   const [captureMode, setCaptureMode] = useState<CaptureMode>("photo");
   const [isRecording, setIsRecording] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Lock orientation to portrait on mount
   useEffect(() => {
@@ -53,19 +88,42 @@ export default function CameraScreen() {
     }
   }, [isRecording]);
 
+  // Flash animation for photo capture
+  const triggerFlashAnimation = useCallback(() => {
+    flashOpacity.setValue(1);
+    Animated.timing(flashOpacity, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  }, [flashOpacity]);
+
   const handleCapture = useCallback(async () => {
-    if (!cameraRef.current || !isCameraReady) return;
+    if (!cameraRef.current || !isCameraReady || isCapturing) return;
 
     if (captureMode === "photo") {
+      setIsCapturing(true);
       try {
+        // Trigger flash animation
+        triggerFlashAnimation();
+
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.8,
           skipProcessing: false,
         });
-        // TODO: Navigate to preview screen with captured photo
-        console.log("Photo captured:", photo?.uri);
+
+        if (photo?.uri) {
+          setCapturedPhotoUri(photo.uri);
+        } else {
+          showError("Failed to capture photo. Please try again.");
+        }
       } catch (error) {
         console.error("Failed to capture photo:", error);
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error occurred";
+        showError(`Photo capture failed: ${errorMessage}`);
+      } finally {
+        setIsCapturing(false);
       }
     } else {
       // Video mode
@@ -84,20 +142,86 @@ export default function CameraScreen() {
           console.log("Video recorded:", video?.uri);
         } catch (error) {
           console.error("Failed to record video:", error);
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error occurred";
+          showError(`Video recording failed: ${errorMessage}`);
         } finally {
           setIsRecording(false);
         }
       }
     }
-  }, [captureMode, isRecording, isCameraReady]);
+  }, [captureMode, isRecording, isCameraReady, isCapturing, triggerFlashAnimation, showError]);
 
   const handleCameraReady = useCallback(() => {
     setIsCameraReady(true);
   }, []);
 
+  // Handle retake - discard the captured photo and return to camera view
+  const handleRetake = useCallback(async () => {
+    if (capturedPhotoUri) {
+      try {
+        // Delete the temporary photo file
+        await deleteAsync(capturedPhotoUri, { idempotent: true });
+      } catch (error) {
+        // Ignore deletion errors - the file might already be gone
+        console.warn("Failed to delete temporary photo:", error);
+      }
+    }
+    setCapturedPhotoUri(null);
+  }, [capturedPhotoUri]);
+
+  // Handle use photo - save entry and navigate back
+  const handleUsePhoto = useCallback(async () => {
+    if (!capturedPhotoUri || !projectId) return;
+
+    setIsProcessing(true);
+    try {
+      // Save photo to persistent storage
+      const savedUri = await savePhotoToDocuments(capturedPhotoUri);
+
+      // Delete the temporary capture file
+      try {
+        await deleteAsync(capturedPhotoUri, { idempotent: true });
+      } catch {
+        // Ignore deletion errors
+      }
+
+      // Create entry in database
+      await createEntry({
+        projectId,
+        entryType: "photo",
+        mediaUri: savedUri,
+      });
+
+      showSuccess("Photo saved successfully!");
+
+      // Navigate back to project detail
+      router.back();
+    } catch (error) {
+      console.error("Failed to save photo:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      showError(`Failed to save photo: ${errorMessage}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [capturedPhotoUri, projectId, router, showError, showSuccess, createEntry]);
+
   // Determine required permissions based on mode
   const requiredPermissions: ("camera" | "microphone")[] =
     captureMode === "video" ? ["camera", "microphone"] : ["camera"];
+
+  // If photo is captured, show preview instead of camera
+  if (capturedPhotoUri) {
+    return (
+      <PhotoPreview
+        photoUri={capturedPhotoUri}
+        onRetake={handleRetake}
+        onUsePhoto={handleUsePhoto}
+        isLoading={isProcessing}
+      />
+    );
+  }
 
   return (
     <View className="flex-1 bg-black">
@@ -200,9 +324,9 @@ export default function CameraScreen() {
                 {/* Capture button */}
                 <Pressable
                   onPress={handleCapture}
-                  disabled={!isCameraReady}
+                  disabled={!isCameraReady || isCapturing}
                   className={`w-20 h-20 rounded-full items-center justify-center ${
-                    !isCameraReady ? "opacity-50" : "active:scale-95"
+                    !isCameraReady || isCapturing ? "opacity-50" : "active:scale-95"
                   }`}
                   style={[
                     styles.captureButton,
@@ -217,7 +341,7 @@ export default function CameraScreen() {
                         ? "Stop recording"
                         : "Start recording"
                   }
-                  accessibilityState={{ disabled: !isCameraReady }}
+                  accessibilityState={{ disabled: !isCameraReady || isCapturing }}
                 >
                   {captureMode === "video" && isRecording ? (
                     // Recording indicator - red square
@@ -244,6 +368,18 @@ export default function CameraScreen() {
             </View>
           </SafeAreaView>
         </CameraView>
+
+        {/* Flash animation overlay */}
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: "white",
+              opacity: flashOpacity,
+            },
+          ]}
+          pointerEvents="none"
+        />
 
         {/* Loading overlay when camera is not ready */}
         {!isCameraReady && (
