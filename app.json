@@ -15,7 +15,13 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.progresstracker.app"
+      "bundleIdentifier": "com.progresstracker.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to capture photos and videos to track your progress.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone to record audio with your videos.",
+        "NSPhotoLibraryUsageDescription": "This app accesses your photo library to save and select media for your progress entries.",
+        "NSPhotoLibraryAddUsageDescription": "This app saves photos and videos to your photo library."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -24,7 +30,15 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.progresstracker.app"
+      "package": "com.progresstracker.app",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -38,7 +52,35 @@
         }
       ],
       "expo-sqlite",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "This app uses the camera to capture photos and videos to track your progress.",
+          "microphonePermission": "This app uses the microphone to record audio with your videos.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "This app accesses your photo library to save and select media for your progress entries.",
+          "savePhotosPermission": "This app saves photos and videos to your photo library.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "This app accesses your photo library to select media for your progress entries."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "This app uses the microphone to record audio with your videos."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

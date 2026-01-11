@@ -1,11 +1,9 @@
 export * from "./colors";
+export * from "./media";
 
 export const APP_NAME = "Progress Tracker";
 export const DATABASE_NAME = "progress-tracker.db";
 export const DATABASE_VERSION = 1;
-
-export const MAX_VIDEO_DURATION_SECONDS = 180; // 3 minutes
-export const MAX_VIDEO_SIZE_MB = 100;
 
 export const PROJECT_CATEGORIES = [
   { id: "fitness", label: "Fitness", icon: "💪" },
