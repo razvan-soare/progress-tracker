@@ -261,7 +261,7 @@ export default function ProjectDetailScreen() {
 
   const handleAddEntry = useDebouncedPress(
     useCallback(() => {
-      router.push(`/entry/create?projectId=${id}` as Href);
+      router.push(`/entry/create/${id}` as Href);
     }, [router, id]),
     300
   );

@@ -151,6 +151,12 @@ export default function RootLayout() {
                   presentation: "fullScreenModal",
                 }}
               />
+              <Stack.Screen
+                name="entry/create/[projectId]"
+                options={{
+                  animation: "slide_from_right",
+                }}
+              />
             </Stack>
           </ToastProvider>
         </QueryClientProvider>

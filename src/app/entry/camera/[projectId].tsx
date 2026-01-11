@@ -9,7 +9,7 @@ import {
   AppStateStatus,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { CameraView, CameraType } from "expo-camera";
 import * as ScreenOrientation from "expo-screen-orientation";
 import {
@@ -23,7 +23,6 @@ import { CameraPermissionGate, LoadingSpinner } from "@/components/ui";
 import { PhotoPreview, VideoPreview } from "@/components/camera";
 import { useDebouncedPress } from "@/lib/hooks";
 import { useToast } from "@/lib/toast/ToastContext";
-import { useEntriesStore } from "@/lib/store";
 import { generateId } from "@/lib/utils";
 
 type CaptureMode = "photo" | "video";
@@ -74,8 +73,7 @@ export default function CameraScreen() {
   const router = useRouter();
   const { projectId } = useLocalSearchParams<{ projectId: string }>();
   const cameraRef = useRef<CameraView>(null);
-  const { showError, showSuccess } = useToast();
-  const createEntry = useEntriesStore((state) => state.createEntry);
+  const { showError } = useToast();
   const flashOpacity = useRef(new Animated.Value(0)).current;
   const pulseOpacity = useRef(new Animated.Value(1)).current;
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -309,7 +307,7 @@ export default function CameraScreen() {
     setVideoDuration(0);
   }, [capturedVideoUri]);
 
-  // Handle use photo - save entry and navigate back
+  // Handle use photo - save to documents and navigate to entry creation form
   const handleUsePhoto = useCallback(async () => {
     if (!capturedPhotoUri || !projectId) return;
 
@@ -325,28 +323,22 @@ export default function CameraScreen() {
         // Ignore deletion errors
       }
 
-      // Create entry in database
-      await createEntry({
-        projectId,
-        entryType: "photo",
+      // Navigate to entry creation form with media details
+      const params = new URLSearchParams({
         mediaUri: savedUri,
+        mediaType: "photo",
       });
-
-      showSuccess("Photo saved successfully!");
-
-      // Navigate back to project detail
-      router.back();
+      router.replace(`/entry/create/${projectId}?${params.toString()}` as Href);
     } catch (error) {
-      console.error("Failed to save photo:", error);
+      console.error("Failed to process photo:", error);
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
-      showError(`Failed to save photo: ${errorMessage}`);
-    } finally {
+      showError(`Failed to process photo: ${errorMessage}`);
       setIsProcessing(false);
     }
-  }, [capturedPhotoUri, projectId, router, showError, showSuccess, createEntry]);
+  }, [capturedPhotoUri, projectId, router, showError]);
 
-  // Handle use video - save entry and navigate back
+  // Handle use video - save to documents and navigate to entry creation form
   const handleUseVideo = useCallback(async () => {
     if (!capturedVideoUri || !projectId) return;
 
@@ -362,27 +354,21 @@ export default function CameraScreen() {
         // Ignore deletion errors
       }
 
-      // Create entry in database
-      await createEntry({
-        projectId,
-        entryType: "video",
+      // Navigate to entry creation form with media details
+      const params = new URLSearchParams({
         mediaUri: savedUri,
-        durationSeconds: videoDuration,
+        mediaType: "video",
+        durationSeconds: videoDuration.toString(),
       });
-
-      showSuccess("Video saved successfully!");
-
-      // Navigate back to project detail
-      router.back();
+      router.replace(`/entry/create/${projectId}?${params.toString()}` as Href);
     } catch (error) {
-      console.error("Failed to save video:", error);
+      console.error("Failed to process video:", error);
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
-      showError(`Failed to save video: ${errorMessage}`);
-    } finally {
+      showError(`Failed to process video: ${errorMessage}`);
       setIsProcessing(false);
     }
-  }, [capturedVideoUri, videoDuration, projectId, router, showError, showSuccess, createEntry]);
+  }, [capturedVideoUri, videoDuration, projectId, router, showError]);
 
   // Determine required permissions based on mode
   const requiredPermissions: ("camera" | "microphone")[] =
