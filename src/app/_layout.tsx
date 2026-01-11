@@ -145,6 +145,12 @@ export default function RootLayout() {
                 }}
               />
               <Stack.Screen
+                name="project/timeline/[id]"
+                options={{
+                  animation: "slide_from_right",
+                }}
+              />
+              <Stack.Screen
                 name="entry/camera/[projectId]"
                 options={{
                   animation: "slide_from_bottom",
