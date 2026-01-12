@@ -8,3 +8,9 @@ export type {
   MediaPermissions,
   UseMediaPermissionsResult,
 } from "./useMediaPermissions";
+export { useChunkedUpload } from "./useChunkedUpload";
+export type {
+  ChunkedUploadStatus,
+  UseChunkedUploadState,
+  UseChunkedUploadReturn,
+} from "./useChunkedUpload";

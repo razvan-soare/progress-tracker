@@ -15,3 +15,31 @@ export type {
   GenerateUploadUrlResponse,
   UploadError,
 } from "./upload";
+
+// Chunked upload utilities
+export {
+  chunkedUpload,
+  resumeChunkedUpload,
+  shouldUseChunkedUpload,
+  CHUNK_SIZE,
+  MAX_CHUNK_RETRIES,
+} from "./chunked-upload";
+export type {
+  MultipartUploadState,
+  CompletedPart,
+  ChunkedUploadProgress,
+  ChunkedUploadOptions,
+  ChunkedUploadResult,
+  ChunkedUploadController,
+} from "./chunked-upload";
+
+// Upload state persistence
+export {
+  saveUploadState,
+  loadUploadState,
+  removeUploadState,
+  getAllUploadStates,
+  cleanupStaleUploadStates,
+  hasResumableUpload,
+  getUploadProgress,
+} from "./upload-state";
