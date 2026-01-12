@@ -13,7 +13,7 @@ import {
   PanResponder,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import { useEntry, useEntryMutations } from "@/lib/store/hooks";
 import { IconButton, LoadingSpinner, ErrorView } from "@/components/ui";
@@ -500,8 +500,15 @@ const UNDO_TIMEOUT_MS = 5000;
 
 export default function EntryViewScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, fromCreate, projectId: passedProjectId } = useLocalSearchParams<{
+    id: string;
+    fromCreate?: string;
+    projectId?: string;
+  }>();
   const { entry, isLoading, error, refetch } = useEntry(id);
+
+  // Determine if we should show the "Go to Timeline" button
+  const showTimelineButton = fromCreate === "true" && (passedProjectId || entry?.projectId);
   const { deleteEntry, restoreEntry } = useEntryMutations();
   const { showToast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
@@ -554,6 +561,14 @@ export default function EntryViewScreen() {
   const handleBack = useCallback(() => {
     router.back();
   }, [router]);
+
+  const handleGoToTimeline = useCallback(() => {
+    const targetProjectId = passedProjectId || entry?.projectId;
+    if (targetProjectId) {
+      // Replace current screen to avoid stacking entry view in navigation
+      router.replace(`/project/timeline/${targetProjectId}` as Href);
+    }
+  }, [router, passedProjectId, entry?.projectId]);
 
   const handleEdit = useCallback(() => {
     setShowActions(false);
@@ -817,6 +832,21 @@ export default function EntryViewScreen() {
               </View>
             )}
           </View>
+
+          {/* Go to Timeline button - shown after creating a new entry */}
+          {showTimelineButton && (
+            <Pressable
+              onPress={handleGoToTimeline}
+              className="mt-4 bg-primary rounded-xl py-3 flex-row items-center justify-center active:opacity-80"
+              accessibilityRole="button"
+              accessibilityLabel="View entry in timeline"
+            >
+              <Text className="text-white text-lg mr-2">📋</Text>
+              <Text className="text-white text-base font-semibold">
+                Go to Timeline
+              </Text>
+            </Pressable>
+          )}
         </View>
       </SafeAreaView>
 

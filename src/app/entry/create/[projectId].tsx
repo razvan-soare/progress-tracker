@@ -9,7 +9,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { TextInput, Button, IconButton, LoadingSpinner } from "@/components/ui";
 import { useProjectsStore, useEntriesStore } from "@/lib/store";
 import { useBackHandler } from "@/lib/hooks";
@@ -115,7 +115,7 @@ export default function EntryCreateScreen() {
       const entryType: EntryType = isTextEntry ? "text" : mediaType!;
       const duration = durationSeconds ? parseInt(durationSeconds, 10) : undefined;
 
-      await createEntry({
+      const newEntry = await createEntry({
         projectId,
         entryType,
         contentText: caption.trim() || undefined,
@@ -125,7 +125,11 @@ export default function EntryCreateScreen() {
       });
 
       showSuccess(isTextEntry ? "Text entry saved!" : "Entry saved!");
-      router.back();
+
+      // Navigate to entry view screen to preview the newly created entry
+      // Use replace to avoid stacking create screen in navigation history
+      // Pass projectId to enable "Go to Timeline" navigation
+      router.replace(`/entry/view/${newEntry.id}?fromCreate=true&projectId=${projectId}` as Href);
     } catch (error) {
       console.error("Failed to save entry:", error);
       const errorMessage =

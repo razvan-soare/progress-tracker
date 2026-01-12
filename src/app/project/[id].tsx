@@ -541,7 +541,7 @@ export default function ProjectDetailScreen() {
                 onPress={handleViewTimeline}
                 className="flex-1 bg-surface rounded-xl py-3 flex-row items-center justify-center active:opacity-80"
                 accessibilityRole="button"
-                accessibilityLabel="View timeline"
+                accessibilityLabel={`View timeline with ${stats?.totalEntries ?? 0} entries`}
                 style={{ minHeight: 48 }}
               >
                 <Text className="mr-2" accessibilityElementsHidden>
@@ -550,6 +550,13 @@ export default function ProjectDetailScreen() {
                 <Text className="text-text-primary text-sm font-medium">
                   Timeline
                 </Text>
+                {(stats?.totalEntries ?? 0) > 0 && (
+                  <View className="ml-2 bg-primary rounded-full min-w-[20px] h-5 px-1.5 items-center justify-center">
+                    <Text className="text-white text-xs font-semibold">
+                      {(stats?.totalEntries ?? 0) > 99 ? "99+" : stats?.totalEntries}
+                    </Text>
+                  </View>
+                )}
               </Pressable>
 
               <Pressable
@@ -606,6 +613,7 @@ export default function ProjectDetailScreen() {
                 entries={entries}
                 projectId={id!}
                 maxEntries={10}
+                totalEntries={stats?.totalEntries}
                 onSeeAll={handleViewTimeline}
               />
 

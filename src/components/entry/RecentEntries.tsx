@@ -7,6 +7,7 @@ export interface RecentEntriesProps {
   entries: Entry[];
   projectId: string;
   maxEntries?: number;
+  totalEntries?: number;
   onSeeAll?: () => void;
 }
 
@@ -14,6 +15,7 @@ export function RecentEntries({
   entries,
   projectId,
   maxEntries = 10,
+  totalEntries,
   onSeeAll,
 }: RecentEntriesProps) {
   const router = useRouter();
@@ -36,6 +38,9 @@ export function RecentEntries({
     return null;
   }
 
+  const entryCount = totalEntries ?? entries.length;
+  const hasMore = entryCount > recentEntries.length;
+
   return (
     <View className="pb-4">
       {/* Section Header */}
@@ -45,10 +50,15 @@ export function RecentEntries({
         </Text>
         <Pressable
           onPress={handleSeeAll}
-          className="active:opacity-60"
+          className="flex-row items-center active:opacity-60"
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel={`View all ${entryCount} entries`}
         >
-          <Text className="text-primary text-sm font-medium">See All</Text>
+          <Text className="text-primary text-sm font-medium">
+            {hasMore ? `View All (${entryCount})` : "View All"}
+          </Text>
+          <Text className="text-primary text-sm ml-1">›</Text>
         </Pressable>
       </View>
 

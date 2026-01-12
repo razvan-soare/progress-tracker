@@ -10,6 +10,8 @@ import {
   Platform,
   UIManager,
   ScrollView,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
@@ -275,6 +277,13 @@ export default function TimelineScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { project, isLoading: projectLoading } = useProject(id);
 
+  // Scroll position preservation
+  const scrollKey = `timeline-${id}`;
+  const getScrollPosition = useAppStore((state) => state.getScrollPosition);
+  const setScrollPosition = useAppStore((state) => state.setScrollPosition);
+  const sectionListRef = useRef<SectionList<Entry, DateSection>>(null);
+  const initialScrollRestored = useRef(false);
+
   // View mode state
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
@@ -354,6 +363,36 @@ export default function TimelineScreen() {
   const handleAddEntry = useCallback(() => {
     router.push(`/entry/create/${id}` as Href);
   }, [router, id]);
+
+  // Save scroll position on scroll
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offset = event.nativeEvent.contentOffset.y;
+      setScrollPosition(scrollKey, offset);
+    },
+    [scrollKey, setScrollPosition]
+  );
+
+  // Restore scroll position when entries are loaded
+  useEffect(() => {
+    if (!isLoading && allEntries.length > 0 && !initialScrollRestored.current && viewMode === "list") {
+      const savedOffset = getScrollPosition(scrollKey);
+      if (savedOffset > 0) {
+        // Use requestAnimationFrame to ensure the list is rendered
+        requestAnimationFrame(() => {
+          // Access the underlying scroll responder to scroll to offset
+          const scrollResponder = sectionListRef.current?.getScrollResponder();
+          if (scrollResponder && "scrollTo" in scrollResponder) {
+            (scrollResponder as { scrollTo: (options: { y: number; animated: boolean }) => void }).scrollTo({
+              y: savedOffset,
+              animated: false,
+            });
+          }
+        });
+      }
+      initialScrollRestored.current = true;
+    }
+  }, [isLoading, allEntries.length, scrollKey, getScrollPosition, viewMode]);
 
   const renderSectionHeader = useCallback(
     ({ section }: { section: DateSection }) => (
@@ -527,6 +566,7 @@ export default function TimelineScreen() {
       ) : (
         // List view
         <SectionList
+          ref={sectionListRef}
           sections={sections}
           renderItem={renderItem}
           renderSectionHeader={renderSectionHeader}
@@ -534,6 +574,8 @@ export default function TimelineScreen() {
           stickySectionHeadersEnabled
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 24 }}
+          onScroll={handleScroll}
+          scrollEventThrottle={100}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
