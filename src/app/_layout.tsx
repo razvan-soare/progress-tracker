@@ -8,6 +8,7 @@ import { initDatabase } from "@/lib/db";
 import { AuthProvider } from "@/lib/auth";
 import { ToastProvider } from "@/lib/toast";
 import { NetworkProvider } from "@/lib/network";
+import { useBackgroundServices } from "@/lib/sync";
 import { ErrorBoundary, NetworkStatusBanner } from "@/components/ui";
 import { colors } from "@/constants/colors";
 
@@ -47,6 +48,12 @@ export default function RootLayout() {
     SystemUI.setBackgroundColorAsync("#0a0a0a");
     setupDatabase();
   }, [setupDatabase]);
+
+  // Start background services (upload processor, media cleanup) after DB is ready
+  useBackgroundServices({
+    enableUploadProcessor: isDbReady,
+    enableCleanupService: isDbReady
+  });
 
   if (dbError) {
     return (

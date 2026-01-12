@@ -84,5 +84,29 @@ export {
   type FailedUpload,
 } from "./sync-stats-service";
 
+// Media cleanup service
+export {
+  MediaCleanupService,
+  getMediaCleanupService,
+  resetMediaCleanupService,
+  type MediaCleanupServiceConfig,
+  type CleanupResult,
+  type CleanupStats,
+  type MediaCleanupEvent,
+  type MediaCleanupEventListener,
+} from "./media-cleanup-service";
+
+export {
+  useMediaCleanup,
+  type UseMediaCleanupOptions,
+  type UseMediaCleanupReturn,
+} from "./useMediaCleanup";
+
+// Background services initialization
+export {
+  useBackgroundServices,
+  type UseBackgroundServicesOptions,
+} from "./useBackgroundServices";
+
 // Test utilities (for development testing)
 export { runSyncQueueTests } from "./__tests__/sync-queue-service.test";

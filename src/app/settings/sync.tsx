@@ -15,6 +15,7 @@ import { Card, Button } from "@/components/ui";
 import { colors } from "@/constants/colors";
 import { useSyncSettingsStore } from "@/lib/store";
 import { useBackgroundUpload } from "@/lib/sync/useBackgroundUpload";
+import { useMediaCleanup } from "@/lib/sync/useMediaCleanup";
 import {
   getSyncStats,
   getFailedUploads,
@@ -29,6 +30,14 @@ import {
   type FailedUpload,
 } from "@/lib/sync";
 import type { SyncHistoryEntry } from "@/types";
+
+const RETENTION_OPTIONS = [
+  { label: "1 day", value: 1 },
+  { label: "3 days", value: 3 },
+  { label: "7 days", value: 7 },
+  { label: "14 days", value: 14 },
+  { label: "30 days", value: 30 },
+];
 
 function formatRelativeTime(dateString: string): string {
   const date = new Date(dateString);
@@ -110,8 +119,16 @@ export default function SyncStorageScreen() {
   const {
     syncOnCellular,
     lastSuccessfulSync,
+    autoCleanupEnabled,
+    autoCleanupRetentionDays,
+    keepThumbnailsLocally,
+    lastAutoCleanup,
+    totalBytesFreed,
     setSyncOnCellular,
     setLastSuccessfulSync,
+    setAutoCleanupEnabled,
+    setAutoCleanupRetentionDays,
+    setKeepThumbnailsLocally,
   } = useSyncSettingsStore();
 
   const {
@@ -131,6 +148,24 @@ export default function SyncStorageScreen() {
     onUploadFailed: () => {
       if (isMounted.current) {
         loadData();
+      }
+    },
+  });
+
+  const {
+    stats: cleanupStats,
+    isCleanupInProgress,
+    forceCleanup,
+    refreshStats: refreshCleanupStats,
+  } = useMediaCleanup({
+    autoStart: true,
+    onCleanupCompleted: (result) => {
+      if (isMounted.current && result.bytesFreed > 0) {
+        loadData();
+        Alert.alert(
+          "Auto-Cleanup Complete",
+          `Freed ${formatBytes(result.bytesFreed)} by removing ${result.mediaFilesDeleted} media files.`
+        );
       }
     },
   });
@@ -277,6 +312,63 @@ export default function SyncStorageScreen() {
       message: value ? "Cellular sync enabled" : "Cellular sync disabled (WiFi only)",
     });
   }, [setSyncOnCellular]);
+
+  const handleAutoCleanupToggle = useCallback((value: boolean) => {
+    setAutoCleanupEnabled(value);
+    addSyncHistoryEntry("cache_clear", "media", "success", {
+      message: value ? "Auto-cleanup enabled" : "Auto-cleanup disabled",
+    });
+  }, [setAutoCleanupEnabled]);
+
+  const handleRetentionChange = useCallback((days: number) => {
+    setAutoCleanupRetentionDays(days);
+    addSyncHistoryEntry("cache_clear", "media", "success", {
+      message: `Retention period set to ${days} day${days > 1 ? "s" : ""}`,
+    });
+  }, [setAutoCleanupRetentionDays]);
+
+  const handleKeepThumbnailsToggle = useCallback((value: boolean) => {
+    setKeepThumbnailsLocally(value);
+    addSyncHistoryEntry("cache_clear", "media", "success", {
+      message: value ? "Thumbnails will be kept locally" : "Thumbnails will be cleaned up",
+    });
+  }, [setKeepThumbnailsLocally]);
+
+  const handleForceCleanup = useCallback(async () => {
+    if (!cleanupStats || cleanupStats.eligibleCount === 0) {
+      Alert.alert("Nothing to Clean", "No media files are eligible for cleanup yet. Files must be synced and past the retention period.");
+      return;
+    }
+
+    Alert.alert(
+      "Run Cleanup Now",
+      `This will remove ${cleanupStats.eligibleCount} synced media files (${formatBytes(cleanupStats.eligibleBytes)}) that are past the ${autoCleanupRetentionDays}-day retention period.\n\nCloud copies will remain intact.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clean Now",
+          onPress: async () => {
+            try {
+              const result = await forceCleanup();
+              if (result.bytesFreed > 0) {
+                Alert.alert(
+                  "Cleanup Complete",
+                  `Freed ${formatBytes(result.bytesFreed)} by removing ${result.mediaFilesDeleted} media files${result.thumbnailsDeleted > 0 ? ` and ${result.thumbnailsDeleted} thumbnails` : ""}.`
+                );
+              } else {
+                Alert.alert("No Files Cleaned", "All eligible files were already cleaned or no files matched the criteria.");
+              }
+              await loadData();
+              await refreshCleanupStats();
+            } catch (error) {
+              console.error("Failed to run cleanup:", error);
+              Alert.alert("Error", "Failed to run cleanup. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  }, [cleanupStats, autoCleanupRetentionDays, forceCleanup, loadData, refreshCleanupStats]);
 
   if (isLoading) {
     return (
@@ -462,6 +554,144 @@ export default function SyncStorageScreen() {
                   ? "Currently syncing on cellular. Tap to disable."
                   : "Currently WiFi only. Tap to enable cellular sync."
               }
+            />
+          </View>
+        </Card>
+
+        {/* Auto Cleanup Settings */}
+        <Card className="mt-4">
+          <Text className="text-lg font-semibold text-text-primary mb-4">
+            Automatic Cleanup
+          </Text>
+
+          {/* Auto-cleanup toggle */}
+          <View className="flex-row items-center justify-between mb-4">
+            <View className="flex-1 pr-4">
+              <Text className="text-base font-medium text-text-primary">
+                Auto-cleanup Synced Media
+              </Text>
+              <Text className="text-text-secondary text-sm mt-1">
+                {autoCleanupEnabled
+                  ? "Automatically remove local media after sync"
+                  : "Keep all media files locally"}
+              </Text>
+            </View>
+            <Switch
+              value={autoCleanupEnabled}
+              onValueChange={handleAutoCleanupToggle}
+              trackColor={{ false: colors.surface, true: colors.primary }}
+              thumbColor={colors.textPrimary}
+              accessibilityLabel="Toggle auto-cleanup"
+              accessibilityHint={
+                autoCleanupEnabled
+                  ? "Auto-cleanup is enabled. Tap to disable."
+                  : "Auto-cleanup is disabled. Tap to enable."
+              }
+            />
+          </View>
+
+          {autoCleanupEnabled && (
+            <>
+              {/* Retention period selector */}
+              <View className="mb-4 pt-4 border-t border-border">
+                <Text className="text-base font-medium text-text-primary mb-2">
+                  Retention Period
+                </Text>
+                <Text className="text-text-secondary text-sm mb-3">
+                  Keep synced media locally for this long before cleaning up
+                </Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {RETENTION_OPTIONS.map((option) => (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => handleRetentionChange(option.value)}
+                      className={`px-3 py-2 rounded-lg ${
+                        autoCleanupRetentionDays === option.value
+                          ? "bg-primary"
+                          : "bg-surface"
+                      }`}
+                      accessibilityLabel={`Set retention to ${option.label}`}
+                      accessibilityState={{ selected: autoCleanupRetentionDays === option.value }}
+                    >
+                      <Text
+                        className={`text-sm font-medium ${
+                          autoCleanupRetentionDays === option.value
+                            ? "text-white"
+                            : "text-text-primary"
+                        }`}
+                      >
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+
+              {/* Keep thumbnails toggle */}
+              <View className="flex-row items-center justify-between pt-4 border-t border-border">
+                <View className="flex-1 pr-4">
+                  <Text className="text-base font-medium text-text-primary">
+                    Keep Thumbnails Locally
+                  </Text>
+                  <Text className="text-text-secondary text-sm mt-1">
+                    {keepThumbnailsLocally
+                      ? "Thumbnails kept for fast timeline loading"
+                      : "Thumbnails will also be cleaned up"}
+                  </Text>
+                </View>
+                <Switch
+                  value={keepThumbnailsLocally}
+                  onValueChange={handleKeepThumbnailsToggle}
+                  trackColor={{ false: colors.surface, true: colors.primary }}
+                  thumbColor={colors.textPrimary}
+                  accessibilityLabel="Toggle keep thumbnails"
+                  accessibilityHint={
+                    keepThumbnailsLocally
+                      ? "Thumbnails will be kept. Tap to include in cleanup."
+                      : "Thumbnails will be cleaned. Tap to keep them."
+                  }
+                />
+              </View>
+            </>
+          )}
+
+          {/* Cleanup stats */}
+          <View className="mt-4 pt-4 border-t border-border">
+            <View className="flex-row justify-between mb-3">
+              <View className="flex-1">
+                <Text className="text-xl font-bold text-text-primary">
+                  {cleanupStats?.eligibleCount ?? 0}
+                </Text>
+                <Text className="text-text-secondary text-sm">Ready to clean</Text>
+              </View>
+              <View className="flex-1">
+                <Text className="text-xl font-bold text-text-primary">
+                  {formatBytes(cleanupStats?.eligibleBytes ?? 0)}
+                </Text>
+                <Text className="text-text-secondary text-sm">Can be freed</Text>
+              </View>
+              <View className="flex-1">
+                <Text className="text-xl font-bold text-success">
+                  {formatBytes(totalBytesFreed)}
+                </Text>
+                <Text className="text-text-secondary text-sm">Total saved</Text>
+              </View>
+            </View>
+
+            {lastAutoCleanup && (
+              <Text className="text-text-secondary text-sm mb-3">
+                Last auto-cleanup: {formatRelativeTime(lastAutoCleanup)}
+              </Text>
+            )}
+
+            <Button
+              title={isCleanupInProgress ? "Cleaning..." : "Run Cleanup Now"}
+              variant="secondary"
+              loading={isCleanupInProgress}
+              disabled={!cleanupStats || cleanupStats.eligibleCount === 0}
+              onPress={handleForceCleanup}
+              accessibilityLabel="Run cleanup now"
+              accessibilityHint="Manually trigger cleanup for eligible media files"
             />
           </View>
         </Card>
