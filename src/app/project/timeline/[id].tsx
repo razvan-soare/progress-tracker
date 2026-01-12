@@ -6,14 +6,23 @@ import {
   RefreshControl,
   Pressable,
   Animated,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { useProject, useEntries } from "@/lib/store/hooks";
 import { EmptyState, IconButton, ErrorView, Skeleton } from "@/components/ui";
 import { EntryThumbnail } from "@/components/entry";
+import { EntryTypeFilter, FilterOption } from "@/components/timeline";
 import { colors } from "@/constants/colors";
 import type { Entry } from "@/types";
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 interface DateSection {
   title: string;
@@ -180,23 +189,49 @@ function TimelineEntryItem({ entry, onPress, index }: TimelineEntryItemProps) {
   );
 }
 
+// Labels for empty state messages
+const FILTER_TYPE_LABELS: Record<FilterOption, string> = {
+  all: "entries",
+  video: "video",
+  photo: "photo",
+  text: "note",
+};
+
 export default function TimelineScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { project, isLoading: projectLoading } = useProject(id);
+
+  // Filter state - persists during session (memory only, resets on exit)
+  const [activeFilter, setActiveFilter] = useState<FilterOption>("all");
+
+  // Fetch all entries (unfiltered) to get accurate statistics
   const {
-    entries,
+    entries: allEntries,
+    statistics,
     isLoading: entriesLoading,
     error,
     refetch,
   } = useEntries(id, { sortOrder: "desc" });
+
+  // Filter entries locally based on active filter for immediate response
+  const filteredEntries = useMemo(() => {
+    if (activeFilter === "all") return allEntries;
+    return allEntries.filter((entry) => entry.entryType === activeFilter);
+  }, [allEntries, activeFilter]);
 
   const [refreshing, setRefreshing] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
 
   const isLoading = projectLoading || entriesLoading;
 
-  const sections = useMemo(() => groupEntriesByDate(entries), [entries]);
+  const sections = useMemo(() => groupEntriesByDate(filteredEntries), [filteredEntries]);
+
+  // Handle filter change with animation
+  const handleFilterChange = useCallback((filter: FilterOption) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setActiveFilter(filter);
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -253,7 +288,7 @@ export default function TimelineScreen() {
   const keyExtractor = useCallback((item: Entry) => item.id, []);
 
   // Show loading skeleton on initial load
-  if (isLoading && entries.length === 0 && !refreshing) {
+  if (isLoading && allEntries.length === 0 && !refreshing) {
     return (
       <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
         {/* Header */}
@@ -275,7 +310,7 @@ export default function TimelineScreen() {
   }
 
   // Show error state with retry
-  if (error && entries.length === 0) {
+  if (error && allEntries.length === 0) {
     return (
       <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
         <View className="flex-row items-center px-4 py-3 border-b border-border">
@@ -324,8 +359,17 @@ export default function TimelineScreen() {
         </Text>
       </View>
 
+      {/* Filter bar - show when there are entries */}
+      {allEntries.length > 0 && (
+        <EntryTypeFilter
+          selected={activeFilter}
+          onSelect={handleFilterChange}
+          statistics={statistics}
+        />
+      )}
+
       {/* Inline error banner when we have cached data but fetch failed */}
-      {error && entries.length > 0 && (
+      {error && allEntries.length > 0 && (
         <ErrorView
           compact
           title="Couldn't refresh"
@@ -336,13 +380,23 @@ export default function TimelineScreen() {
       )}
 
       {/* Content */}
-      {entries.length === 0 ? (
+      {allEntries.length === 0 ? (
+        // No entries at all - show initial empty state
         <EmptyState
           icon="📋"
           title="No entries yet"
           description="Start documenting your progress by adding your first entry."
           actionLabel="Add Entry"
           onAction={handleAddEntry}
+        />
+      ) : filteredEntries.length === 0 ? (
+        // Has entries but filter returns empty
+        <EmptyState
+          icon="🔍"
+          title={`No ${FILTER_TYPE_LABELS[activeFilter]} entries yet`}
+          description={`You haven't added any ${FILTER_TYPE_LABELS[activeFilter]}s to this project yet.`}
+          actionLabel="View All"
+          onAction={() => handleFilterChange("all")}
         />
       ) : (
         <SectionList
@@ -362,7 +416,7 @@ export default function TimelineScreen() {
             />
           }
           accessibilityRole="list"
-          accessibilityLabel={`Timeline with ${entries.length} entries`}
+          accessibilityLabel={`Timeline with ${filteredEntries.length} ${activeFilter === "all" ? "entries" : FILTER_TYPE_LABELS[activeFilter] + " entries"}`}
         />
       )}
     </SafeAreaView>
