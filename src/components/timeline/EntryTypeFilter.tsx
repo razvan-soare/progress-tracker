@@ -128,22 +128,20 @@ export function EntryTypeFilter({
   };
 
   return (
-    <View className="border-b border-border">
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
-      >
-        {FILTER_OPTIONS.map((option) => (
-          <FilterChip
-            key={option.key}
-            label={option.label}
-            count={getCount(option.key)}
-            isActive={selected === option.key}
-            onPress={() => handleSelect(option.key)}
-          />
-        ))}
-      </ScrollView>
-    </View>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ paddingLeft: 16, paddingVertical: 12 }}
+    >
+      {FILTER_OPTIONS.map((option) => (
+        <FilterChip
+          key={option.key}
+          label={option.label}
+          count={getCount(option.key)}
+          isActive={selected === option.key}
+          onPress={() => handleSelect(option.key)}
+        />
+      ))}
+    </ScrollView>
   );
 }

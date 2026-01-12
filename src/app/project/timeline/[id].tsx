@@ -14,9 +14,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { useProject, useEntries } from "@/lib/store/hooks";
+import { useAppStore } from "@/lib/store/app-store";
+import type { SortOrder } from "@/lib/store/entries-store";
 import { EmptyState, IconButton, ErrorView, Skeleton } from "@/components/ui";
 import { EntryThumbnail } from "@/components/entry";
-import { EntryTypeFilter, FilterOption } from "@/components/timeline";
+import { EntryTypeFilter, FilterOption, SortOrderSelector } from "@/components/timeline";
 import { CalendarView } from "@/components/calendar";
 import { colors } from "@/constants/colors";
 import type { Entry } from "@/types";
@@ -60,7 +62,7 @@ function getDateKey(dateString: string): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function groupEntriesByDate(entries: Entry[]): DateSection[] {
+function groupEntriesByDate(entries: Entry[], sortOrder: SortOrder = "desc"): DateSection[] {
   const groups: Record<string, Entry[]> = {};
 
   entries.forEach((entry) => {
@@ -71,8 +73,10 @@ function groupEntriesByDate(entries: Entry[]): DateSection[] {
     groups[dateKey].push(entry);
   });
 
-  // Sort by date descending (newest first)
-  const sortedKeys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+  // Sort by date based on sortOrder
+  const sortedKeys = Object.keys(groups).sort((a, b) =>
+    sortOrder === "desc" ? b.localeCompare(a) : a.localeCompare(b)
+  );
 
   return sortedKeys.map((dateKey) => ({
     title: formatDateHeader(groups[dateKey][0].createdAt),
@@ -277,6 +281,11 @@ export default function TimelineScreen() {
   // Filter state - persists during session (memory only, resets on exit)
   const [activeFilter, setActiveFilter] = useState<FilterOption>("all");
 
+  // Sort preference from store (persists per project during session)
+  const projectSortPreferences = useAppStore((state) => state.projectSortPreferences);
+  const setProjectSortOrder = useAppStore((state) => state.setProjectSortOrder);
+  const sortOrder: SortOrder = id ? (projectSortPreferences[id] ?? "desc") : "desc";
+
   // Fetch all entries (unfiltered) to get accurate statistics
   const {
     entries: allEntries,
@@ -284,7 +293,7 @@ export default function TimelineScreen() {
     isLoading: entriesLoading,
     error,
     refetch,
-  } = useEntries(id, { sortOrder: "desc" });
+  } = useEntries(id, { sortOrder });
 
   // Filter entries locally based on active filter for immediate response
   const filteredEntries = useMemo(() => {
@@ -297,7 +306,7 @@ export default function TimelineScreen() {
 
   const isLoading = projectLoading || entriesLoading;
 
-  const sections = useMemo(() => groupEntriesByDate(filteredEntries), [filteredEntries]);
+  const sections = useMemo(() => groupEntriesByDate(filteredEntries, sortOrder), [filteredEntries, sortOrder]);
 
   // Handle view mode toggle with animation
   const handleViewModeToggle = useCallback((mode: ViewMode) => {
@@ -310,6 +319,14 @@ export default function TimelineScreen() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setActiveFilter(filter);
   }, []);
+
+  // Handle sort order change
+  const handleSortOrderChange = useCallback((newSortOrder: SortOrder) => {
+    if (id) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setProjectSortOrder(id, newSortOrder);
+    }
+  }, [id, setProjectSortOrder]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -439,13 +456,23 @@ export default function TimelineScreen() {
         <ViewToggle viewMode={viewMode} onToggle={handleViewModeToggle} />
       </View>
 
-      {/* Filter bar - show when there are entries and in list view */}
+      {/* Filter and sort bar - show when there are entries and in list view */}
       {allEntries.length > 0 && viewMode === "list" && (
-        <EntryTypeFilter
-          selected={activeFilter}
-          onSelect={handleFilterChange}
-          statistics={statistics}
-        />
+        <View className="flex-row items-center border-b border-border">
+          <View className="flex-1">
+            <EntryTypeFilter
+              selected={activeFilter}
+              onSelect={handleFilterChange}
+              statistics={statistics}
+            />
+          </View>
+          <View className="pr-4">
+            <SortOrderSelector
+              selected={sortOrder}
+              onSelect={handleSortOrderChange}
+            />
+          </View>
+        </View>
       )}
 
       {/* Inline error banner when we have cached data but fetch failed */}
