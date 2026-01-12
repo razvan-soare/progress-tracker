@@ -42,5 +42,31 @@ export {
   type UseEntryUploadStatusReturn,
 } from "./useEntryUploadStatus";
 
+// Conflict detection and resolution
+export {
+  detectConflict,
+  isRemoteNewer,
+  applyConflictResolution,
+  getLocalEntry,
+  checkEntriesForConflicts,
+  autoResolveConflicts,
+  type ConflictCheckResult,
+} from "./conflict-detection-service";
+
+export {
+  logConflict,
+  getConflictLogs,
+  getConflictLogsForRecord,
+  clearOldConflictLogs,
+  getConflictStats,
+  type LogConflictInput,
+} from "./conflict-log-service";
+
+export {
+  useConflictResolution,
+  type ConflictResolutionState,
+  type UseConflictResolutionReturn,
+} from "./useConflictResolution";
+
 // Test utilities (for development testing)
 export { runSyncQueueTests } from "./__tests__/sync-queue-service.test";

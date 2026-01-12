@@ -239,6 +239,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   createEntry: async (input: CreateEntryInput) => {
     set({ isLoading: true, error: null });
 
+    const now = formatDateTime(new Date());
     const entry: Entry = {
       id: generateId(),
       projectId: input.projectId,
@@ -247,7 +248,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       mediaUri: input.mediaUri,
       thumbnailUri: input.thumbnailUri,
       durationSeconds: input.durationSeconds,
-      createdAt: formatDateTime(new Date()),
+      createdAt: now,
+      updatedAt: now,
       uploadStatus: "pending",
       isDeleted: false,
     };
@@ -260,8 +262,8 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
       await db.runAsync(
         `INSERT INTO entries (
           id, project_id, entry_type, content_text, media_uri, media_remote_url,
-          thumbnail_uri, duration_seconds, created_at, synced_at, upload_status, is_deleted
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          thumbnail_uri, duration_seconds, created_at, updated_at, synced_at, upload_status, is_deleted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           row.id,
           row.project_id,
@@ -272,6 +274,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           row.thumbnail_uri,
           row.duration_seconds ?? null,
           row.created_at,
+          row.updated_at,
           row.synced_at,
           row.upload_status,
           row.is_deleted ?? 0,
@@ -331,6 +334,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         existingEntry = fetched;
       }
 
+      const now = formatDateTime(new Date());
       const updatedEntry: Entry = {
         ...existingEntry,
         contentText: input.contentText !== undefined ? input.contentText : existingEntry.contentText,
@@ -339,13 +343,15 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
         thumbnailUri: input.thumbnailUri !== undefined ? input.thumbnailUri : existingEntry.thumbnailUri,
         durationSeconds: input.durationSeconds !== undefined ? input.durationSeconds : existingEntry.durationSeconds,
         uploadStatus: input.uploadStatus ?? existingEntry.uploadStatus,
+        updatedAt: now,
       };
 
       const row = entryModelToRow(updatedEntry);
       await db.runAsync(
         `UPDATE entries SET
           content_text = ?, media_uri = ?, media_remote_url = ?,
-          thumbnail_uri = ?, duration_seconds = ?, upload_status = ?
+          thumbnail_uri = ?, duration_seconds = ?, upload_status = ?,
+          updated_at = ?
         WHERE id = ?`,
         [
           row.content_text,
@@ -354,6 +360,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
           row.thumbnail_uri,
           row.duration_seconds,
           row.upload_status,
+          row.updated_at,
           id,
         ]
       );

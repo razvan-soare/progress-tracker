@@ -28,6 +28,7 @@ export interface Entry {
   thumbnailUri?: string;
   durationSeconds?: number;
   createdAt: string;
+  updatedAt: string;
   syncedAt?: string;
   uploadStatus: UploadStatus;
   isDeleted: boolean;
@@ -97,6 +98,7 @@ export interface EntryRow {
   thumbnail_uri: string | null;
   duration_seconds: number | null;
   created_at: string;
+  updated_at: string;
   synced_at: string | null;
   upload_status: string;
   is_deleted: number;
@@ -137,4 +139,45 @@ export interface SyncQueueItemRow {
   attempts: number;
   last_attempt_at: string | null;
   error_message: string | null;
+}
+
+// Conflict resolution types
+export type ConflictType = "concurrent_edit" | "delete_edit";
+export type ConflictResolution = "keep_local" | "keep_remote" | "keep_both";
+
+export interface SyncConflict {
+  id: string;
+  tableName: string;
+  recordId: string;
+  conflictType: ConflictType;
+  localEntry: Entry;
+  remoteEntry?: Entry;
+  localUpdatedAt: string;
+  remoteUpdatedAt?: string;
+}
+
+export interface ConflictLogEntry {
+  id: string;
+  tableName: string;
+  recordId: string;
+  conflictType: ConflictType;
+  localUpdatedAt: string;
+  remoteUpdatedAt?: string;
+  localData?: string;
+  remoteData?: string;
+  resolution: ConflictResolution;
+  resolvedAt: string;
+}
+
+export interface ConflictLogEntryRow {
+  id: string;
+  table_name: string;
+  record_id: string;
+  conflict_type: string;
+  local_updated_at: string;
+  remote_updated_at: string | null;
+  local_data: string | null;
+  remote_data: string | null;
+  resolution: string;
+  resolved_at: string;
 }

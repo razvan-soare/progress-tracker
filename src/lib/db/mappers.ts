@@ -9,9 +9,13 @@ import type {
   NotificationSettingsRow,
   SyncQueueItem,
   SyncQueueItemRow,
+  ConflictLogEntry,
+  ConflictLogEntryRow,
   EntryType,
   UploadStatus,
   ProjectCategory,
+  ConflictType,
+  ConflictResolution,
 } from "@/types";
 
 /**
@@ -72,6 +76,7 @@ export function entryRowToModel(row: EntryRow): Entry {
     thumbnailUri: row.thumbnail_uri ?? undefined,
     durationSeconds: row.duration_seconds ?? undefined,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
     syncedAt: row.synced_at ?? undefined,
     uploadStatus: row.upload_status as UploadStatus,
     isDeleted: row.is_deleted === 1,
@@ -94,6 +99,7 @@ export function entryModelToRow(
     thumbnail_uri: model.thumbnailUri ?? null,
     duration_seconds: model.durationSeconds ?? null,
     created_at: model.createdAt,
+    updated_at: model.updatedAt,
     synced_at: model.syncedAt ?? null,
     upload_status: model.uploadStatus,
     is_deleted: model.isDeleted ? 1 : 0,
@@ -205,5 +211,41 @@ export function syncQueueItemModelToRow(model: SyncQueueItem): SyncQueueItemRow 
     attempts: model.attempts,
     last_attempt_at: model.lastAttemptAt ?? null,
     error_message: model.errorMessage ?? null,
+  };
+}
+
+/**
+ * Convert a database conflict log row to a ConflictLogEntry model.
+ */
+export function conflictLogRowToModel(row: ConflictLogEntryRow): ConflictLogEntry {
+  return {
+    id: row.id,
+    tableName: row.table_name,
+    recordId: row.record_id,
+    conflictType: row.conflict_type as ConflictType,
+    localUpdatedAt: row.local_updated_at,
+    remoteUpdatedAt: row.remote_updated_at ?? undefined,
+    localData: row.local_data ?? undefined,
+    remoteData: row.remote_data ?? undefined,
+    resolution: row.resolution as ConflictResolution,
+    resolvedAt: row.resolved_at,
+  };
+}
+
+/**
+ * Convert a ConflictLogEntry model to database row format for insertion.
+ */
+export function conflictLogModelToRow(model: ConflictLogEntry): ConflictLogEntryRow {
+  return {
+    id: model.id,
+    table_name: model.tableName,
+    record_id: model.recordId,
+    conflict_type: model.conflictType,
+    local_updated_at: model.localUpdatedAt,
+    remote_updated_at: model.remoteUpdatedAt ?? null,
+    local_data: model.localData ?? null,
+    remote_data: model.remoteData ?? null,
+    resolution: model.resolution,
+    resolved_at: model.resolvedAt,
   };
 }

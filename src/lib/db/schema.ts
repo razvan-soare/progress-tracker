@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS entries (
   thumbnail_uri TEXT,
   duration_seconds INTEGER,
   created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
   synced_at TEXT,
   upload_status TEXT DEFAULT 'pending',
   is_deleted INTEGER DEFAULT 0,
@@ -75,6 +76,20 @@ CREATE TABLE IF NOT EXISTS sync_queue (
   error_message TEXT
 );
 
+-- Conflict Log: Records sync conflicts for debugging
+CREATE TABLE IF NOT EXISTS conflict_log (
+  id TEXT PRIMARY KEY,
+  table_name TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  conflict_type TEXT NOT NULL,
+  local_updated_at TEXT NOT NULL,
+  remote_updated_at TEXT,
+  local_data TEXT,
+  remote_data TEXT,
+  resolution TEXT NOT NULL,
+  resolved_at TEXT NOT NULL
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_entries_project ON entries(project_id);
 CREATE INDEX IF NOT EXISTS idx_entries_created ON entries(created_at DESC);
@@ -86,4 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_project_month ON reports(project_id, mont
 CREATE INDEX IF NOT EXISTS idx_notification_settings_project ON notification_settings(project_id);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_attempts ON sync_queue(attempts);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_table_record ON sync_queue(table_name, record_id);
+CREATE INDEX IF NOT EXISTS idx_conflict_log_table_record ON conflict_log(table_name, record_id);
+CREATE INDEX IF NOT EXISTS idx_conflict_log_resolved_at ON conflict_log(resolved_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entries_updated_at ON entries(updated_at DESC);
 `;

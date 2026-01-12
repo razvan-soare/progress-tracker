@@ -31,3 +31,5 @@ export { UploadProgressBar } from "./UploadProgressBar";
 export type { UploadProgressBarProps } from "./UploadProgressBar";
 export { GlobalUploadIndicator } from "./GlobalUploadIndicator";
 export type { GlobalUploadIndicatorProps } from "./GlobalUploadIndicator";
+export { ConflictResolutionModal } from "./ConflictResolutionModal";
+export type { ConflictResolutionModalProps } from "./ConflictResolutionModal";
