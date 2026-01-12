@@ -26,3 +26,7 @@ export {
   type WizardFormData,
   type WizardFormErrors,
 } from "./wizard-store";
+export {
+  useSyncSettingsStore,
+  type SyncSettings,
+} from "./sync-settings-store";

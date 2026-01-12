@@ -68,5 +68,21 @@ export {
   type UseConflictResolutionReturn,
 } from "./useConflictResolution";
 
+// Sync stats and history
+export {
+  getSyncStats,
+  getFailedUploads,
+  getSyncHistory,
+  addSyncHistoryEntry,
+  clearSyncHistory,
+  retryFailedUpload,
+  retryAllFailedUploads,
+  clearLocalCache,
+  getClearableCacheSize,
+  formatBytes,
+  type SyncStats,
+  type FailedUpload,
+} from "./sync-stats-service";
+
 // Test utilities (for development testing)
 export { runSyncQueueTests } from "./__tests__/sync-queue-service.test";

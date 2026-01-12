@@ -11,11 +11,16 @@ import type {
   SyncQueueItemRow,
   ConflictLogEntry,
   ConflictLogEntryRow,
+  SyncHistoryEntry,
+  SyncHistoryEntryRow,
   EntryType,
   UploadStatus,
   ProjectCategory,
   ConflictType,
   ConflictResolution,
+  SyncOperationType,
+  SyncEntityType,
+  SyncHistoryStatus,
 } from "@/types";
 
 /**
@@ -247,5 +252,37 @@ export function conflictLogModelToRow(model: ConflictLogEntry): ConflictLogEntry
     remote_data: model.remoteData ?? null,
     resolution: model.resolution,
     resolved_at: model.resolvedAt,
+  };
+}
+
+/**
+ * Convert a database sync history row to a SyncHistoryEntry model.
+ */
+export function syncHistoryRowToModel(row: SyncHistoryEntryRow): SyncHistoryEntry {
+  return {
+    id: row.id,
+    operationType: row.operation_type as SyncOperationType,
+    entityType: row.entity_type as SyncEntityType,
+    entityId: row.entity_id ?? undefined,
+    status: row.status as SyncHistoryStatus,
+    message: row.message ?? undefined,
+    bytesTransferred: row.bytes_transferred,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Convert a SyncHistoryEntry model to database row format for insertion.
+ */
+export function syncHistoryModelToRow(model: SyncHistoryEntry): SyncHistoryEntryRow {
+  return {
+    id: model.id,
+    operation_type: model.operationType,
+    entity_type: model.entityType,
+    entity_id: model.entityId ?? null,
+    status: model.status,
+    message: model.message ?? null,
+    bytes_transferred: model.bytesTransferred,
+    created_at: model.createdAt,
   };
 }

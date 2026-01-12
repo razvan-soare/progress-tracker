@@ -172,6 +172,12 @@ export default function RootLayout() {
                   presentation: "fullScreenModal",
                 }}
               />
+              <Stack.Screen
+                name="settings/sync"
+                options={{
+                  animation: "slide_from_right",
+                }}
+              />
             </Stack>
             </ToastProvider>
           </QueryClientProvider>

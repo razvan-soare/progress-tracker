@@ -181,3 +181,30 @@ export interface ConflictLogEntryRow {
   resolution: string;
   resolved_at: string;
 }
+
+// Sync history types
+export type SyncOperationType = "upload" | "download" | "sync" | "retry" | "cache_clear";
+export type SyncEntityType = "entry" | "project" | "media" | "all";
+export type SyncHistoryStatus = "success" | "failed" | "in_progress";
+
+export interface SyncHistoryEntry {
+  id: string;
+  operationType: SyncOperationType;
+  entityType: SyncEntityType;
+  entityId?: string;
+  status: SyncHistoryStatus;
+  message?: string;
+  bytesTransferred: number;
+  createdAt: string;
+}
+
+export interface SyncHistoryEntryRow {
+  id: string;
+  operation_type: string;
+  entity_type: string;
+  entity_id: string | null;
+  status: string;
+  message: string | null;
+  bytes_transferred: number;
+  created_at: string;
+}

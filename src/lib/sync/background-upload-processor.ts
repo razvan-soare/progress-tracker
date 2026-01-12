@@ -17,6 +17,7 @@ import {
   loadUploadState,
   removeUploadState,
 } from "@/lib/supabase/upload-state";
+import { useSyncSettingsStore } from "@/lib/store/sync-settings-store";
 
 /**
  * Configuration for the BackgroundUploadProcessor
@@ -113,16 +114,27 @@ function getContentType(fileUri: string, entryType: "video" | "photo"): string {
 
 /**
  * Check if a network state represents a stable connection suitable for uploads
+ * @param state - The current network state
+ * @param allowCellular - Whether to allow cellular connections (from user settings)
  */
-function isConnectionStable(state: NetInfoState): boolean {
+function isConnectionStable(state: NetInfoState, allowCellular: boolean = false): boolean {
   if (!state.isConnected || !state.isInternetReachable) {
     return false;
   }
 
-  if (state.type === "cellular" && state.details) {
-    const cellularDetails = state.details as { cellularGeneration?: string };
-    const generation = cellularDetails.cellularGeneration;
-    return generation === "4g" || generation === "5g";
+  if (state.type === "cellular") {
+    // Only allow cellular if user has enabled it
+    if (!allowCellular) {
+      return false;
+    }
+
+    // Also check for good cellular quality (4G/5G)
+    if (state.details) {
+      const cellularDetails = state.details as { cellularGeneration?: string };
+      const generation = cellularDetails.cellularGeneration;
+      return generation === "4g" || generation === "5g";
+    }
+    return false;
   }
 
   if (state.type === "wifi") {
@@ -130,6 +142,13 @@ function isConnectionStable(state: NetInfoState): boolean {
   }
 
   return false;
+}
+
+/**
+ * Get the current cellular sync setting from the store
+ */
+function getSyncOnCellularSetting(): boolean {
+  return useSyncSettingsStore.getState().syncOnCellular;
 }
 
 /**
@@ -210,8 +229,9 @@ export class BackgroundUploadProcessor {
     const networkState = await NetInfo.fetch();
     this.lastNetworkState = networkState;
     const appState = AppState.currentState;
+    const allowCellular = getSyncOnCellularSetting();
 
-    if (isConnectionStable(networkState) && appState === "active") {
+    if (isConnectionStable(networkState, allowCellular) && appState === "active") {
       // Delay start to ensure connection is truly stable
       this.connectionStabilityTimeout = setTimeout(() => {
         this.resumeProcessing();
@@ -324,7 +344,8 @@ export class BackgroundUploadProcessor {
   }
 
   private handleNetworkChange = (state: NetInfoState): void => {
-    const isStable = isConnectionStable(state);
+    const allowCellular = getSyncOnCellularSetting();
+    const isStable = isConnectionStable(state, allowCellular);
     this.lastNetworkState = state;
 
     // Clear any pending stability timeout
@@ -353,7 +374,8 @@ export class BackgroundUploadProcessor {
       this.pauseProcessing("appState");
     } else if (nextAppState === "active" && this.state.isPaused && this.state.isRunning) {
       // App came to foreground, check network and potentially resume
-      if (this.lastNetworkState && isConnectionStable(this.lastNetworkState)) {
+      const allowCellular = getSyncOnCellularSetting();
+      if (this.lastNetworkState && isConnectionStable(this.lastNetworkState, allowCellular)) {
         // Clear any pending stability timeout
         if (this.connectionStabilityTimeout) {
           clearTimeout(this.connectionStabilityTimeout);

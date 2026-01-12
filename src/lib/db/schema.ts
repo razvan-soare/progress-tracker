@@ -90,6 +90,18 @@ CREATE TABLE IF NOT EXISTS conflict_log (
   resolved_at TEXT NOT NULL
 );
 
+-- Sync History Log: Records recent sync operations
+CREATE TABLE IF NOT EXISTS sync_history (
+  id TEXT PRIMARY KEY,
+  operation_type TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT,
+  status TEXT NOT NULL,
+  message TEXT,
+  bytes_transferred INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_entries_project ON entries(project_id);
 CREATE INDEX IF NOT EXISTS idx_entries_created ON entries(created_at DESC);
@@ -104,4 +116,5 @@ CREATE INDEX IF NOT EXISTS idx_sync_queue_table_record ON sync_queue(table_name,
 CREATE INDEX IF NOT EXISTS idx_conflict_log_table_record ON conflict_log(table_name, record_id);
 CREATE INDEX IF NOT EXISTS idx_conflict_log_resolved_at ON conflict_log(resolved_at DESC);
 CREATE INDEX IF NOT EXISTS idx_entries_updated_at ON entries(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sync_history_created_at ON sync_history(created_at DESC);
 `;
