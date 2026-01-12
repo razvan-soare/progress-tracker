@@ -9,6 +9,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
@@ -16,6 +17,7 @@ import { useProject, useEntries } from "@/lib/store/hooks";
 import { EmptyState, IconButton, ErrorView, Skeleton } from "@/components/ui";
 import { EntryThumbnail } from "@/components/entry";
 import { EntryTypeFilter, FilterOption } from "@/components/timeline";
+import { CalendarView } from "@/components/calendar";
 import { colors } from "@/constants/colors";
 import type { Entry } from "@/types";
 
@@ -23,6 +25,8 @@ import type { Entry } from "@/types";
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+type ViewMode = "list" | "calendar";
 
 interface DateSection {
   title: string;
@@ -197,10 +201,78 @@ const FILTER_TYPE_LABELS: Record<FilterOption, string> = {
   text: "note",
 };
 
+interface ViewToggleProps {
+  viewMode: ViewMode;
+  onToggle: (mode: ViewMode) => void;
+}
+
+function ViewToggle({ viewMode, onToggle }: ViewToggleProps) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+  };
+
+  return (
+    <Animated.View
+      className="flex-row bg-surface rounded-lg overflow-hidden"
+      style={{ transform: [{ scale: scaleAnim }] }}
+    >
+      <Pressable
+        onPress={() => onToggle("list")}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        className={`px-3 py-2 ${viewMode === "list" ? "bg-primary" : ""}`}
+        accessibilityRole="button"
+        accessibilityLabel="List view"
+        accessibilityState={{ selected: viewMode === "list" }}
+      >
+        <Text
+          className={`text-sm ${viewMode === "list" ? "text-white" : "text-text-secondary"}`}
+        >
+          ☰
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={() => onToggle("calendar")}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        className={`px-3 py-2 ${viewMode === "calendar" ? "bg-primary" : ""}`}
+        accessibilityRole="button"
+        accessibilityLabel="Calendar view"
+        accessibilityState={{ selected: viewMode === "calendar" }}
+      >
+        <Text
+          className={`text-sm ${viewMode === "calendar" ? "text-white" : "text-text-secondary"}`}
+        >
+          📅
+        </Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 export default function TimelineScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { project, isLoading: projectLoading } = useProject(id);
+
+  // View mode state
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   // Filter state - persists during session (memory only, resets on exit)
   const [activeFilter, setActiveFilter] = useState<FilterOption>("all");
@@ -226,6 +298,12 @@ export default function TimelineScreen() {
   const isLoading = projectLoading || entriesLoading;
 
   const sections = useMemo(() => groupEntriesByDate(filteredEntries), [filteredEntries]);
+
+  // Handle view mode toggle with animation
+  const handleViewModeToggle = useCallback((mode: ViewMode) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setViewMode(mode);
+  }, []);
 
   // Handle filter change with animation
   const handleFilterChange = useCallback((filter: FilterOption) => {
@@ -357,10 +435,12 @@ export default function TimelineScreen() {
         >
           {project?.name || "Timeline"}
         </Text>
+        {/* View toggle button */}
+        <ViewToggle viewMode={viewMode} onToggle={handleViewModeToggle} />
       </View>
 
-      {/* Filter bar - show when there are entries */}
-      {allEntries.length > 0 && (
+      {/* Filter bar - show when there are entries and in list view */}
+      {allEntries.length > 0 && viewMode === "list" && (
         <EntryTypeFilter
           selected={activeFilter}
           onSelect={handleFilterChange}
@@ -389,8 +469,27 @@ export default function TimelineScreen() {
           actionLabel="Add Entry"
           onAction={handleAddEntry}
         />
+      ) : viewMode === "calendar" ? (
+        // Calendar view
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+        >
+          <CalendarView
+            entries={allEntries}
+            project={project ?? undefined}
+            onEntryPress={handleEntryPress}
+          />
+        </ScrollView>
       ) : filteredEntries.length === 0 ? (
-        // Has entries but filter returns empty
+        // Has entries but filter returns empty (list view only)
         <EmptyState
           icon="🔍"
           title={`No ${FILTER_TYPE_LABELS[activeFilter]} entries yet`}
@@ -399,6 +498,7 @@ export default function TimelineScreen() {
           onAction={() => handleFilterChange("all")}
         />
       ) : (
+        // List view
         <SectionList
           sections={sections}
           renderItem={renderItem}

@@ -146,6 +146,47 @@ export function useEntries(
 }
 
 /**
+ * Hook for accessing all entries across all projects.
+ * Provides entries list, loading, and error states.
+ */
+export function useAllEntries(options: UseEntriesOptions = {}) {
+  const allEntries = useEntriesStore((state) => state.allEntries);
+  const isLoading = useEntriesStore((state) => state.isLoading);
+  const error = useEntriesStore((state) => state.error);
+  const fetchAllEntries = useEntriesStore((state) => state.fetchAllEntries);
+  const clearError = useEntriesStore((state) => state.clearError);
+
+  const { sortOrder = "desc" } = options;
+
+  useEffect(() => {
+    fetchAllEntries(sortOrder);
+  }, [sortOrder, fetchAllEntries]);
+
+  const refetch = useCallback(() => {
+    return fetchAllEntries(sortOrder);
+  }, [sortOrder, fetchAllEntries]);
+
+  // Computed statistics for all entries
+  const statistics = useMemo(() => {
+    return {
+      totalCount: allEntries.length,
+      videoCount: allEntries.filter((e) => e.entryType === "video").length,
+      photoCount: allEntries.filter((e) => e.entryType === "photo").length,
+      textCount: allEntries.filter((e) => e.entryType === "text").length,
+    };
+  }, [allEntries]);
+
+  return {
+    entries: allEntries,
+    statistics,
+    isLoading,
+    error,
+    refetch,
+    clearError,
+  };
+}
+
+/**
  * Hook for accessing a single entry by ID.
  * Provides entry data, loading, and error states.
  */

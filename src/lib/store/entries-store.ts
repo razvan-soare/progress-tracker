@@ -81,11 +81,13 @@ interface EntriesState {
   entries: Entry[];
   entriesByProject: Record<string, Entry[]>;
   entriesById: Record<string, Entry>;
+  allEntries: Entry[];
   isLoading: boolean;
   error: string | null;
 
   // Actions
   fetchEntries: (filter: EntryFilter, sortOrder?: SortOrder) => Promise<Entry[]>;
+  fetchAllEntries: (sortOrder?: SortOrder) => Promise<Entry[]>;
   fetchEntryById: (id: string) => Promise<Entry | null>;
   createEntry: (input: CreateEntryInput) => Promise<Entry>;
   updateEntry: (id: string, input: UpdateEntryInput) => Promise<Entry>;
@@ -98,6 +100,7 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
   entries: [],
   entriesByProject: {},
   entriesById: {},
+  allEntries: [],
   isLoading: false,
   error: null,
 
@@ -158,6 +161,45 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : "Failed to fetch entries",
+        isLoading: false,
+      });
+      return [];
+    }
+  },
+
+  fetchAllEntries: async (sortOrder: SortOrder = "desc") => {
+    set({ isLoading: true, error: null });
+    try {
+      const db = await getDatabase();
+
+      const query = `
+        SELECT * FROM entries
+        WHERE is_deleted = 0
+        ORDER BY created_at ${sortOrder.toUpperCase()}
+      `;
+
+      const rows = await db.getAllAsync<EntryRow>(query);
+      const entries = rows.map(entryRowToModel);
+
+      // Update state with fetched entries
+      const entriesById = entries.reduce(
+        (acc, entry) => {
+          acc[entry.id] = entry;
+          return acc;
+        },
+        {} as Record<string, Entry>
+      );
+
+      set((state) => ({
+        allEntries: entries,
+        entriesById: { ...state.entriesById, ...entriesById },
+        isLoading: false,
+      }));
+
+      return entries;
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : "Failed to fetch all entries",
         isLoading: false,
       });
       return [];
