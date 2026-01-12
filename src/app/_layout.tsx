@@ -7,7 +7,8 @@ import * as SystemUI from "expo-system-ui";
 import { initDatabase } from "@/lib/db";
 import { AuthProvider } from "@/lib/auth";
 import { ToastProvider } from "@/lib/toast";
-import { ErrorBoundary, NetworkStatus } from "@/components/ui";
+import { NetworkProvider } from "@/lib/network";
+import { ErrorBoundary, NetworkStatusBanner } from "@/components/ui";
 import { colors } from "@/constants/colors";
 
 import "../../global.css";
@@ -94,12 +95,13 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <QueryClientProvider client={queryClient}>
-          <ToastProvider>
-            <StatusBar style="light" />
-            <NetworkStatus />
-            <Stack
+      <NetworkProvider>
+        <AuthProvider>
+          <QueryClientProvider client={queryClient}>
+            <ToastProvider>
+              <StatusBar style="light" />
+              <NetworkStatusBanner />
+              <Stack
               screenOptions={{
                 headerShown: false,
                 contentStyle: { backgroundColor: "#0a0a0a" },
@@ -171,9 +173,10 @@ export default function RootLayout() {
                 }}
               />
             </Stack>
-          </ToastProvider>
-        </QueryClientProvider>
-      </AuthProvider>
+            </ToastProvider>
+          </QueryClientProvider>
+        </AuthProvider>
+      </NetworkProvider>
     </ErrorBoundary>
   );
 }

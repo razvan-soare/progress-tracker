@@ -16,6 +16,7 @@ export {
   FormSkeleton,
 } from "./Skeleton";
 export { NetworkStatus } from "./NetworkStatus";
+export { NetworkStatusBanner } from "./NetworkStatusBanner";
 export { Toast } from "./Toast";
 export { SuccessCelebration } from "./SuccessCelebration";
 export { PermissionRequest } from "./PermissionRequest";
