@@ -243,12 +243,13 @@ export function useProjectMutations() {
 
 /**
  * Hook for entry CRUD operations.
- * Returns mutation functions for creating, updating, and deleting entries.
+ * Returns mutation functions for creating, updating, deleting, and restoring entries.
  */
 export function useEntryMutations() {
   const createEntry = useEntriesStore((state) => state.createEntry);
   const updateEntry = useEntriesStore((state) => state.updateEntry);
   const deleteEntry = useEntriesStore((state) => state.deleteEntry);
+  const restoreEntry = useEntriesStore((state) => state.restoreEntry);
   const isLoading = useEntriesStore((state) => state.isLoading);
   const error = useEntriesStore((state) => state.error);
   const clearError = useEntriesStore((state) => state.clearError);
@@ -257,6 +258,7 @@ export function useEntryMutations() {
     createEntry,
     updateEntry,
     deleteEntry,
+    restoreEntry,
     isLoading,
     error,
     clearError,

@@ -5,6 +5,7 @@ interface ToastState {
   message: string;
   type: ToastType;
   visible: boolean;
+  duration?: number;
   action?: {
     label: string;
     onPress: () => void;
@@ -39,7 +40,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       type: ToastType = "info",
       action?: { label: string; onPress: () => void }
     ) => {
-      setToast({ message, type, visible: true, action });
+      // Use longer duration (5 seconds) for toasts with actions (like Undo)
+      const duration = action ? 5000 : undefined;
+      setToast({ message, type, visible: true, action, duration });
     },
     []
   );
@@ -82,6 +85,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         visible={toast.visible}
         onDismiss={hideToast}
         action={toast.action}
+        duration={toast.duration}
       />
     </ToastContext.Provider>
   );

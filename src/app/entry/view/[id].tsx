@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -496,14 +496,26 @@ function TextViewer({ text }: TextViewerProps) {
   );
 }
 
+const UNDO_TIMEOUT_MS = 5000;
+
 export default function EntryViewScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { entry, isLoading, error, refetch } = useEntry(id);
-  const { deleteEntry } = useEntryMutations();
+  const { deleteEntry, restoreEntry } = useEntryMutations();
   const { showToast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup undo timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Swipe down to dismiss
   const translateY = useRef(new Animated.Value(0)).current;
@@ -557,7 +569,7 @@ export default function EntryViewScreen() {
     setShowActions(false);
     Alert.alert(
       "Delete Entry",
-      "Are you sure you want to delete this entry? This action cannot be undone.",
+      "Delete this entry? This cannot be undone.",
       [
         {
           text: "Cancel",
@@ -570,9 +582,47 @@ export default function EntryViewScreen() {
             if (!id) return;
             setIsDeleting(true);
             try {
-              await deleteEntry(id);
-              showToast("Entry deleted", "success");
+              const deletedEntry = await deleteEntry(id);
+              setIsDeleting(false);
+
+              // Navigate back immediately
               router.back();
+
+              // Show toast with undo action
+              if (deletedEntry) {
+                // Clear any existing undo timeout
+                if (undoTimeoutRef.current) {
+                  clearTimeout(undoTimeoutRef.current);
+                }
+
+                showToast("Entry deleted", "success", {
+                  label: "Undo",
+                  onPress: async () => {
+                    // Clear the timeout since user clicked undo
+                    if (undoTimeoutRef.current) {
+                      clearTimeout(undoTimeoutRef.current);
+                      undoTimeoutRef.current = null;
+                    }
+                    try {
+                      await restoreEntry(deletedEntry);
+                      showToast("Entry restored", "success");
+                    } catch (err) {
+                      showToast(
+                        err instanceof Error ? err.message : "Failed to restore entry",
+                        "error"
+                      );
+                    }
+                  },
+                });
+
+                // Set timeout to finalize deletion (toast auto-dismisses)
+                undoTimeoutRef.current = setTimeout(() => {
+                  undoTimeoutRef.current = null;
+                  // Entry is already soft-deleted in DB, no additional action needed
+                }, UNDO_TIMEOUT_MS);
+              } else {
+                showToast("Entry deleted", "success");
+              }
             } catch (err) {
               showToast(
                 err instanceof Error ? err.message : "Failed to delete entry",
@@ -584,7 +634,7 @@ export default function EntryViewScreen() {
         },
       ]
     );
-  }, [id, deleteEntry, showToast, router]);
+  }, [id, deleteEntry, restoreEntry, showToast, router]);
 
   const toggleActions = useCallback(() => {
     setShowActions((prev) => !prev);

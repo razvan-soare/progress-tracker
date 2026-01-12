@@ -91,7 +91,8 @@ interface EntriesState {
   fetchEntryById: (id: string) => Promise<Entry | null>;
   createEntry: (input: CreateEntryInput) => Promise<Entry>;
   updateEntry: (id: string, input: UpdateEntryInput) => Promise<Entry>;
-  deleteEntry: (id: string) => Promise<void>;
+  deleteEntry: (id: string) => Promise<Entry | null>;
+  restoreEntry: (entry: Entry) => Promise<void>;
   clearProjectEntries: (projectId: string) => void;
   clearError: () => void;
 }
@@ -413,14 +414,70 @@ export const useEntriesStore = create<EntriesState>((set, get) => ({
 
         return {
           entries: state.entries.filter((e) => e.id !== id),
+          allEntries: state.allEntries.filter((e) => e.id !== id),
           entriesByProject: newEntriesByProject,
           entriesById: newEntriesById,
           isLoading: false,
         };
       });
+
+      // Return the deleted entry for undo capability
+      return entry || null;
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : "Failed to delete entry",
+        isLoading: false,
+      });
+      throw error;
+    }
+  },
+
+  restoreEntry: async (entry: Entry) => {
+    set({ isLoading: true, error: null });
+    try {
+      const db = await getDatabase();
+
+      // Restore the entry by clearing the is_deleted flag
+      await db.runAsync(
+        "UPDATE entries SET is_deleted = 0 WHERE id = ?",
+        [entry.id]
+      );
+
+      // Remove the delete operation from sync queue if it hasn't been synced yet
+      await db.runAsync(
+        "DELETE FROM sync_queue WHERE record_id = ? AND operation = 'delete' AND table_name = 'entries'",
+        [entry.id]
+      );
+
+      // Add restore operation to sync queue
+      await addEntryToSyncQueue(entry.id, "update");
+
+      // Restore entry to state
+      set((state) => {
+        const projectEntries = state.entriesByProject[entry.projectId] ?? [];
+        // Insert entry back in correct position (sorted by createdAt desc)
+        const updatedProjectEntries = [...projectEntries, entry].sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+        return {
+          entries: [...state.entries, entry].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          ),
+          allEntries: [...state.allEntries, entry].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          ),
+          entriesByProject: {
+            ...state.entriesByProject,
+            [entry.projectId]: updatedProjectEntries,
+          },
+          entriesById: { ...state.entriesById, [entry.id]: entry },
+          isLoading: false,
+        };
+      });
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : "Failed to restore entry",
         isLoading: false,
       });
       throw error;
