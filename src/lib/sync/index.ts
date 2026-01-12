@@ -35,5 +35,12 @@ export {
   type UseBackgroundUploadOptions,
 } from "./useBackgroundUpload";
 
+export {
+  useEntryUploadStatus,
+  useEntriesUploadStatus,
+  type EntryUploadState,
+  type UseEntryUploadStatusReturn,
+} from "./useEntryUploadStatus";
+
 // Test utilities (for development testing)
 export { runSyncQueueTests } from "./__tests__/sync-queue-service.test";

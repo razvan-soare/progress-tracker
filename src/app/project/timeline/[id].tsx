@@ -18,12 +18,13 @@ import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { useProject, useEntries } from "@/lib/store/hooks";
 import { useAppStore } from "@/lib/store/app-store";
 import type { SortOrder } from "@/lib/store/entries-store";
-import { EmptyState, IconButton, ErrorView, Skeleton } from "@/components/ui";
+import { EmptyState, IconButton, ErrorView, Skeleton, UploadStatusIndicator } from "@/components/ui";
 import { EntryThumbnail } from "@/components/entry";
 import { EntryTypeFilter, FilterOption, SortOrderSelector } from "@/components/timeline";
 import { CalendarView } from "@/components/calendar";
 import { colors } from "@/constants/colors";
 import type { Entry } from "@/types";
+import { useBackgroundUpload } from "@/lib/sync/useBackgroundUpload";
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -137,10 +138,13 @@ const ENTRY_TYPE_LABELS: Record<string, string> = {
 interface TimelineEntryItemProps {
   entry: Entry;
   onPress: () => void;
+  onRetryUpload?: () => void;
   index: number;
+  uploadProgress?: number | null;
+  isCurrentlyUploading?: boolean;
 }
 
-function TimelineEntryItem({ entry, onPress, index }: TimelineEntryItemProps) {
+function TimelineEntryItem({ entry, onPress, onRetryUpload, index, uploadProgress, isCurrentlyUploading }: TimelineEntryItemProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateX = useRef(new Animated.Value(20)).current;
 
@@ -160,6 +164,8 @@ function TimelineEntryItem({ entry, onPress, index }: TimelineEntryItemProps) {
       }),
     ]).start();
   }, [fadeAnim, translateX, index]);
+
+  const shouldShowUploadStatus = entry.uploadStatus !== "uploaded";
 
   return (
     <Animated.View
@@ -189,9 +195,22 @@ function TimelineEntryItem({ entry, onPress, index }: TimelineEntryItemProps) {
               </Text>
             )}
           </View>
-          <Text className="text-text-secondary text-sm mt-1">
-            {formatTime(entry.createdAt)}
-          </Text>
+          <View className="flex-row items-center mt-1">
+            <Text className="text-text-secondary text-sm">
+              {formatTime(entry.createdAt)}
+            </Text>
+            {shouldShowUploadStatus && (
+              <View className="ml-2">
+                <UploadStatusIndicator
+                  status={entry.uploadStatus}
+                  progress={isCurrentlyUploading ? uploadProgress ?? undefined : undefined}
+                  onRetry={entry.uploadStatus === "failed" ? onRetryUpload : undefined}
+                  size="sm"
+                  showLabel
+                />
+              </View>
+            )}
+          </View>
         </View>
         <Text className="text-text-secondary text-lg ml-2">›</Text>
       </Pressable>
@@ -276,6 +295,13 @@ export default function TimelineScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { project, isLoading: projectLoading } = useProject(id);
+
+  // Upload status tracking
+  const {
+    currentEntryId,
+    currentProgress,
+    checkPendingUploads,
+  } = useBackgroundUpload({ autoStart: true });
 
   // Scroll position preservation
   const scrollKey = `timeline-${id}`;
@@ -408,15 +434,22 @@ export default function TimelineScreen() {
     []
   );
 
+  const handleRetryUpload = useCallback(async () => {
+    await checkPendingUploads();
+  }, [checkPendingUploads]);
+
   const renderItem = useCallback(
     ({ item, index }: { item: Entry; index: number }) => (
       <TimelineEntryItem
         entry={item}
         onPress={() => handleEntryPress(item.id)}
+        onRetryUpload={handleRetryUpload}
         index={index}
+        uploadProgress={currentEntryId === item.id ? currentProgress : null}
+        isCurrentlyUploading={currentEntryId === item.id}
       />
     ),
-    [handleEntryPress]
+    [handleEntryPress, handleRetryUpload, currentEntryId, currentProgress]
   );
 
   const keyExtractor = useCallback((item: Entry) => item.id, []);

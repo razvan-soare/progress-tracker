@@ -14,6 +14,8 @@ import { TextInput, Button, IconButton, LoadingSpinner } from "@/components/ui";
 import { useProjectsStore, useEntriesStore } from "@/lib/store";
 import { useBackHandler } from "@/lib/hooks";
 import { useToast } from "@/lib/toast";
+import { useNetwork } from "@/lib/network/NetworkContext";
+import { useBackgroundUpload } from "@/lib/sync/useBackgroundUpload";
 import type { EntryType } from "@/types";
 
 const MAX_CAPTION_LENGTH = 500;
@@ -31,10 +33,13 @@ export default function EntryCreateScreen() {
   const { showError, showSuccess } = useToast();
   const { projectsById, fetchProjectById } = useProjectsStore();
   const { createEntry, isLoading: isCreatingEntry } = useEntriesStore();
+  const { isOnline } = useNetwork();
+  const { checkPendingUploads } = useBackgroundUpload({ autoStart: true });
 
   const [caption, setCaption] = useState("");
   const [isLoadingProject, setIsLoadingProject] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [uploadMode, setUploadMode] = useState<"now" | "later">("now");
 
   const project = projectId ? projectsById[projectId] : null;
   const hasMedia = Boolean(mediaUri && mediaType);
@@ -99,7 +104,7 @@ export default function EntryCreateScreen() {
     setCaption(trimmedText);
   }, []);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (mode: "now" | "later" = uploadMode) => {
     if (!projectId) {
       showError("Invalid project");
       return;
@@ -124,7 +129,22 @@ export default function EntryCreateScreen() {
         durationSeconds: entryType === "video" ? duration : undefined,
       });
 
-      showSuccess(isTextEntry ? "Text entry saved!" : "Entry saved!");
+      // If "Upload Now" is selected and we're online, trigger immediate upload check
+      if (mode === "now" && isOnline && hasMedia) {
+        // Trigger background upload processor to pick up the new entry
+        await checkPendingUploads();
+        showSuccess(isTextEntry ? "Text entry saved!" : "Entry saved! Upload started.");
+      } else if (mode === "later" || !isOnline) {
+        showSuccess(
+          isTextEntry
+            ? "Text entry saved!"
+            : isOnline
+            ? "Entry saved! It will upload later."
+            : "Entry saved! Will upload when online."
+        );
+      } else {
+        showSuccess(isTextEntry ? "Text entry saved!" : "Entry saved!");
+      }
 
       // Navigate to entry view screen to preview the newly created entry
       // Use replace to avoid stacking create screen in navigation history
@@ -152,6 +172,9 @@ export default function EntryCreateScreen() {
     showSuccess,
     showError,
     router,
+    uploadMode,
+    isOnline,
+    checkPendingUploads,
   ]);
 
   const formatDuration = (seconds: number): string => {
@@ -309,21 +332,67 @@ export default function EntryCreateScreen() {
           </View>
         </ScrollView>
 
-        {/* Bottom Button */}
+        {/* Bottom Buttons */}
         <View className="px-4 py-4 border-t border-border">
-          <Button
-            title="Save Entry"
-            onPress={handleSave}
-            disabled={!canSave}
-            loading={isSaving || isCreatingEntry}
-            variant="primary"
-            accessibilityLabel="Save entry"
-            accessibilityHint={
-              isTextEntry
-                ? "Saves your text entry to the project"
-                : "Saves your media entry with optional caption to the project"
-            }
-          />
+          {/* Network status indicator for media entries */}
+          {hasMedia && (
+            <View className="mb-3">
+              <View className="flex-row items-center justify-center mb-2">
+                <View
+                  className={`w-2 h-2 rounded-full mr-2 ${
+                    isOnline ? "bg-success" : "bg-error"
+                  }`}
+                />
+                <Text className="text-text-secondary text-sm">
+                  {isOnline ? "Online - Ready to upload" : "Offline - Will upload later"}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Upload mode buttons for media entries */}
+          {hasMedia && isOnline ? (
+            <View className="flex-row gap-3">
+              <View className="flex-1">
+                <Button
+                  title="Upload Later"
+                  onPress={() => handleSave("later")}
+                  disabled={!canSave}
+                  loading={isSaving && uploadMode === "later"}
+                  variant="secondary"
+                  accessibilityLabel="Save and upload later"
+                  accessibilityHint="Saves your entry and queues it for upload later"
+                />
+              </View>
+              <View className="flex-1">
+                <Button
+                  title="Upload Now"
+                  onPress={() => handleSave("now")}
+                  disabled={!canSave}
+                  loading={isSaving && uploadMode === "now"}
+                  variant="primary"
+                  accessibilityLabel="Save and upload now"
+                  accessibilityHint="Saves your entry and starts uploading immediately"
+                />
+              </View>
+            </View>
+          ) : (
+            <Button
+              title={hasMedia && !isOnline ? "Save (Upload when online)" : "Save Entry"}
+              onPress={() => handleSave("now")}
+              disabled={!canSave}
+              loading={isSaving || isCreatingEntry}
+              variant="primary"
+              accessibilityLabel="Save entry"
+              accessibilityHint={
+                isTextEntry
+                  ? "Saves your text entry to the project"
+                  : hasMedia && !isOnline
+                  ? "Saves your entry and will upload when back online"
+                  : "Saves your media entry with optional caption to the project"
+              }
+            />
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

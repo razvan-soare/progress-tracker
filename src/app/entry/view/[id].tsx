@@ -16,8 +16,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import { useEntry, useEntryMutations } from "@/lib/store/hooks";
-import { IconButton, LoadingSpinner, ErrorView } from "@/components/ui";
+import { IconButton, LoadingSpinner, ErrorView, UploadStatusIndicator, UploadProgressBar } from "@/components/ui";
 import { useToast } from "@/lib/toast";
+import { useEntryUploadStatus } from "@/lib/sync/useEntryUploadStatus";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -507,6 +508,14 @@ export default function EntryViewScreen() {
   }>();
   const { entry, isLoading, error, refetch } = useEntry(id);
 
+  // Track upload status for this entry
+  const {
+    status: uploadStatus,
+    progress: uploadProgress,
+    isCurrentlyUploading,
+    retryUpload,
+  } = useEntryUploadStatus(id || "", entry?.uploadStatus || "pending");
+
   // Determine if we should show the "Go to Timeline" button
   const showTimelineButton = fromCreate === "true" && (passedProjectId || entry?.projectId);
   const { deleteEntry, restoreEntry } = useEntryMutations();
@@ -808,6 +817,34 @@ export default function EntryViewScreen() {
 
         {/* Metadata footer */}
         <View className="px-6 py-4 border-t border-border/30">
+          {/* Upload status indicator */}
+          {entry.entryType !== "text" && uploadStatus !== "uploaded" && (
+            <View className="mb-3">
+              {isCurrentlyUploading && uploadProgress != null ? (
+                <View className="bg-surface/50 rounded-lg p-3">
+                  <View className="flex-row items-center justify-between mb-2">
+                    <Text className="text-text-primary text-sm font-medium">
+                      Uploading...
+                    </Text>
+                    <Text className="text-primary text-sm font-medium">
+                      {Math.round(uploadProgress)}%
+                    </Text>
+                  </View>
+                  <UploadProgressBar progress={uploadProgress} height={4} />
+                </View>
+              ) : (
+                <View className="flex-row items-center">
+                  <UploadStatusIndicator
+                    status={uploadStatus}
+                    onRetry={uploadStatus === "failed" ? retryUpload : undefined}
+                    size="md"
+                    showLabel
+                  />
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Caption */}
           {entry.contentText && entry.entryType !== "text" && (
             <Text

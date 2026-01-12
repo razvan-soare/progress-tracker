@@ -2,6 +2,8 @@ import { useRef, useCallback } from "react";
 import { View, Text, Image, Pressable, Animated } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import type { Entry, EntryType } from "@/types";
+import { UploadStatusIndicator } from "@/components/ui/UploadStatusIndicator";
+import { UploadProgressBar } from "@/components/ui/UploadProgressBar";
 
 const ENTRY_TYPE_ICONS: Record<EntryType, string> = {
   video: "🎬",
@@ -50,6 +52,8 @@ export interface EntryCardProps {
   onLongPress?: () => void;
   showDate?: boolean;
   showTime?: boolean;
+  uploadProgress?: number;
+  onRetryUpload?: () => void;
 }
 
 const THUMBNAIL_SIZE = { width: 80, height: 80 };
@@ -62,6 +66,8 @@ export function EntryCard({
   onLongPress,
   showDate = false,
   showTime = true,
+  uploadProgress,
+  onRetryUpload,
 }: EntryCardProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
@@ -192,6 +198,34 @@ export function EntryCard({
     }
   };
 
+  const shouldShowUploadStatus = entry.uploadStatus !== "uploaded";
+  const isUploading = entry.uploadStatus === "uploading";
+
+  const renderUploadStatus = () => {
+    if (!shouldShowUploadStatus) return null;
+
+    return (
+      <View className="mt-1.5">
+        {isUploading && uploadProgress != null ? (
+          <View className="flex-row items-center">
+            <View className="flex-1 mr-2">
+              <UploadProgressBar progress={uploadProgress} height={3} />
+            </View>
+            <Text className="text-xs text-primary">{Math.round(uploadProgress)}%</Text>
+          </View>
+        ) : (
+          <UploadStatusIndicator
+            status={entry.uploadStatus}
+            progress={uploadProgress}
+            onRetry={onRetryUpload}
+            size="sm"
+            showLabel
+          />
+        )}
+      </View>
+    );
+  };
+
   const renderTextContent = () => {
     if (entry.entryType === "text") {
       return (
@@ -209,10 +243,13 @@ export function EntryCard({
               {truncateText(entry.contentText, 2, CHARS_PER_LINE)}
             </Text>
           )}
-          <Text className="text-text-secondary text-xs">
-            {showDate && `${formatShortDate(entry.createdAt)} · `}
-            {showTime && formatTime(entry.createdAt)}
-          </Text>
+          <View className="flex-row items-center justify-between">
+            <Text className="text-text-secondary text-xs">
+              {showDate && `${formatShortDate(entry.createdAt)} · `}
+              {showTime && formatTime(entry.createdAt)}
+            </Text>
+          </View>
+          {renderUploadStatus()}
         </View>
       );
     }
@@ -237,10 +274,13 @@ export function EntryCard({
             {entry.contentText}
           </Text>
         )}
-        <Text className="text-text-secondary text-xs">
-          {showDate && `${formatShortDate(entry.createdAt)} · `}
-          {showTime && formatTime(entry.createdAt)}
-        </Text>
+        <View className="flex-row items-center justify-between">
+          <Text className="text-text-secondary text-xs">
+            {showDate && `${formatShortDate(entry.createdAt)} · `}
+            {showTime && formatTime(entry.createdAt)}
+          </Text>
+        </View>
+        {renderUploadStatus()}
       </View>
     );
   };
