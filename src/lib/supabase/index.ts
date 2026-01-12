@@ -43,3 +43,15 @@ export {
   hasResumableUpload,
   getUploadProgress,
 } from "./upload-state";
+
+// Media streaming from R2
+export {
+  generateStreamingUrl,
+  prefetchStreamingUrls,
+  clearStreamingUrlCache,
+  getStreamingCacheStats,
+} from "./streaming";
+export type {
+  GenerateDownloadUrlResponse,
+  StreamingError,
+} from "./streaming";

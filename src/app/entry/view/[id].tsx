@@ -11,6 +11,7 @@ import {
   GestureResponderEvent,
   Animated,
   PanResponder,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
@@ -19,6 +20,10 @@ import { useEntry, useEntryMutations } from "@/lib/store/hooks";
 import { IconButton, LoadingSpinner, ErrorView, UploadStatusIndicator, UploadProgressBar } from "@/components/ui";
 import { useToast } from "@/lib/toast";
 import { useEntryUploadStatus } from "@/lib/sync/useEntryUploadStatus";
+import { useRemoteMedia, usePrefetchAdjacentMedia } from "@/lib/hooks/useRemoteMedia";
+import { useAdjacentEntriesArray } from "@/lib/hooks/useAdjacentEntries";
+import { useNetwork } from "@/lib/network/NetworkContext";
+import type { Entry } from "@/types";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -44,9 +49,11 @@ function formatDateTime(dateString: string): string {
 interface VideoViewerProps {
   videoUri: string;
   durationSeconds: number;
+  isStreaming?: boolean;
+  thumbnailUri?: string | null;
 }
 
-function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
+function VideoViewer({ videoUri, durationSeconds, isStreaming = false, thumbnailUri }: VideoViewerProps) {
   const videoRef = useRef<Video>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPosition, setCurrentPosition] = useState(0);
@@ -55,6 +62,9 @@ function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [scrubberWidth, setScrubberWidth] = useState(0);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [playableBufferMs, setPlayableBufferMs] = useState(0);
 
   const handlePlaybackStatusUpdate = useCallback(
     (status: AVPlaybackStatus) => {
@@ -62,6 +72,17 @@ function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
         setHasError(false);
         setErrorMessage(null);
         setIsPlaying(status.isPlaying);
+        setIsVideoLoaded(true);
+
+        // Track buffering state for streaming
+        if ("isBuffering" in status) {
+          setIsBuffering(status.isBuffering);
+        }
+
+        // Track buffered position for progressive loading indicator
+        if ("playableDurationMillis" in status && status.playableDurationMillis) {
+          setPlayableBufferMs(status.playableDurationMillis);
+        }
 
         if (status.durationMillis) {
           setActualDuration(Math.floor(status.durationMillis / 1000));
@@ -80,6 +101,7 @@ function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
         setHasError(true);
         setErrorMessage(status.error);
         setIsPlaying(false);
+        setIsBuffering(false);
       }
     },
     [isSeeking]
@@ -168,6 +190,9 @@ function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
   const progressPercentage =
     actualDuration > 0 ? (currentPosition / actualDuration) * 100 : 0;
 
+  const bufferPercentage =
+    actualDuration > 0 ? (playableBufferMs / 1000 / actualDuration) * 100 : 0;
+
   return (
     <View className="flex-1 items-center justify-center">
       <Pressable
@@ -188,17 +213,19 @@ function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
           shouldPlay={false}
           isLooping={false}
           usePoster={true}
+          posterSource={thumbnailUri ? { uri: thumbnailUri } : undefined}
           posterStyle={{
             width: SCREEN_WIDTH,
             height: SCREEN_HEIGHT * 0.6,
             resizeMode: "contain",
           }}
           onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+          progressUpdateIntervalMillis={isStreaming ? 250 : 500}
           accessibilityLabel="Video entry"
         />
 
         {/* Play/Pause overlay */}
-        {!hasError && (
+        {!hasError && !isBuffering && (
           <View
             style={[StyleSheet.absoluteFill, styles.playOverlay]}
             pointerEvents="none"
@@ -213,6 +240,21 @@ function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
                 <View style={styles.pauseBar} />
               </View>
             )}
+          </View>
+        )}
+
+        {/* Buffering indicator */}
+        {(isBuffering || (!isVideoLoaded && isStreaming)) && !hasError && (
+          <View
+            style={[StyleSheet.absoluteFill, styles.bufferingOverlay]}
+            pointerEvents="none"
+          >
+            <View style={styles.bufferingContainer}>
+              <ActivityIndicator size="large" color="#fff" />
+              <Text style={styles.bufferingText}>
+                {isVideoLoaded ? "Buffering..." : "Loading..."}
+              </Text>
+            </View>
           </View>
         )}
 
@@ -283,6 +325,15 @@ function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
         >
           {/* Track background */}
           <View style={styles.scrubberTrack}>
+            {/* Buffer fill (for streaming) */}
+            {isStreaming && bufferPercentage > 0 && (
+              <View
+                style={[
+                  styles.scrubberBuffer,
+                  { width: `${Math.min(bufferPercentage, 100)}%` },
+                ]}
+              />
+            )}
             {/* Progress fill */}
             <View
               style={[
@@ -303,6 +354,16 @@ function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
             ]}
           />
         </View>
+
+        {/* Streaming indicator */}
+        {isStreaming && (
+          <View className="flex-row items-center justify-center mt-2">
+            <View className="w-2 h-2 rounded-full bg-primary mr-2" />
+            <Text className="text-text-secondary text-xs">
+              Streaming from cloud
+            </Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -310,9 +371,12 @@ function VideoViewer({ videoUri, durationSeconds }: VideoViewerProps) {
 
 interface PhotoViewerProps {
   photoUri: string;
+  isStreaming?: boolean;
 }
 
-function PhotoViewer({ photoUri }: PhotoViewerProps) {
+function PhotoViewer({ photoUri, isStreaming = false }: PhotoViewerProps) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
   const scale = useRef(new Animated.Value(1)).current;
   const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
@@ -447,6 +511,16 @@ function PhotoViewer({ photoUri }: PhotoViewerProps) {
     lastTap.current = now;
   }, [scale, translateX, translateY]);
 
+  const handleLoad = useCallback(() => {
+    setIsLoading(false);
+    setHasError(false);
+  }, []);
+
+  const handleError = useCallback(() => {
+    setIsLoading(false);
+    setHasError(true);
+  }, []);
+
   return (
     <View className="flex-1 items-center justify-center">
       <Animated.View
@@ -465,11 +539,32 @@ function PhotoViewer({ photoUri }: PhotoViewerProps) {
             resizeMode="contain"
             accessibilityRole="image"
             accessibilityLabel="Photo entry"
+            onLoad={handleLoad}
+            onError={handleError}
           />
         </Pressable>
       </Animated.View>
+
+      {/* Loading overlay */}
+      {isLoading && (
+        <View style={[StyleSheet.absoluteFill, styles.photoLoadingOverlay]}>
+          <ActivityIndicator size="large" color="#fff" />
+          {isStreaming && (
+            <Text style={styles.bufferingText}>Loading from cloud...</Text>
+          )}
+        </View>
+      )}
+
+      {/* Error overlay */}
+      {hasError && (
+        <View style={[StyleSheet.absoluteFill, styles.photoErrorOverlay]}>
+          <Text style={styles.errorIcon}>⚠</Text>
+          <Text style={styles.errorText}>Failed to load image</Text>
+        </View>
+      )}
+
       <Text className="text-text-secondary text-xs mt-4">
-        Pinch to zoom • Double tap to zoom in/out
+        {isStreaming ? "Streaming from cloud • " : ""}Pinch to zoom • Double tap to zoom in/out
       </Text>
     </View>
   );
@@ -494,6 +589,89 @@ function TextViewer({ text }: TextViewerProps) {
         {text}
       </Text>
     </ScrollView>
+  );
+}
+
+interface MediaContentViewerProps {
+  entry: Entry;
+}
+
+function MediaContentViewer({ entry }: MediaContentViewerProps) {
+  const { isOnline } = useNetwork();
+  const { state, mediaUri, isStreaming, retry } = useRemoteMedia(entry, {
+    enableCaching: true,
+    skip: entry.entryType === "text",
+  });
+
+  // Text entries render immediately
+  if (entry.entryType === "text") {
+    return <TextViewer text={entry.contentText || ""} />;
+  }
+
+  // Loading state
+  if (state.status === "loading") {
+    return (
+      <View style={styles.mediaLoadingContainer}>
+        <ActivityIndicator size="large" color="#fff" />
+        <Text style={styles.mediaLoadingProgress}>
+          {state.progress < 20
+            ? "Preparing..."
+            : `Loading ${Math.round(state.progress)}%`}
+        </Text>
+      </View>
+    );
+  }
+
+  // Error state
+  if (state.status === "error") {
+    return (
+      <View style={styles.offlineContainer}>
+        <Text style={styles.offlineIcon}>{state.isOffline ? "📶" : "⚠"}</Text>
+        <Text style={styles.offlineTitle}>
+          {state.isOffline ? "You're Offline" : "Failed to Load Media"}
+        </Text>
+        <Text style={styles.offlineMessage}>{state.error}</Text>
+        <Pressable
+          onPress={retry}
+          style={styles.retryButton}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading media"
+        >
+          <Text style={styles.retryButtonText}>
+            {state.isOffline ? "Try Again" : "Retry"}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // Ready state - render appropriate viewer
+  if (state.status === "ready" && mediaUri) {
+    if (entry.entryType === "video") {
+      return (
+        <VideoViewer
+          videoUri={mediaUri}
+          durationSeconds={entry.durationSeconds || 0}
+          isStreaming={isStreaming}
+          thumbnailUri={entry.thumbnailUri}
+        />
+      );
+    }
+
+    if (entry.entryType === "photo") {
+      return <PhotoViewer photoUri={mediaUri} isStreaming={isStreaming} />;
+    }
+  }
+
+  // Idle or no media - show placeholder
+  return (
+    <View style={styles.offlineContainer}>
+      <Text style={styles.offlineIcon}>📷</Text>
+      <Text style={styles.offlineTitle}>No Media Available</Text>
+      <Text style={styles.offlineMessage}>
+        This entry has no media or the media could not be found.
+      </Text>
+    </View>
   );
 }
 
@@ -523,6 +701,10 @@ export default function EntryViewScreen() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Prefetch adjacent entries for smoother navigation
+  const adjacentEntries = useAdjacentEntriesArray(id, entry?.projectId);
+  usePrefetchAdjacentMedia(adjacentEntries, 0, 1);
 
   // Cleanup undo timeout on unmount
   useEffect(() => {
@@ -801,18 +983,7 @@ export default function EntryViewScreen() {
 
         {/* Content based on entry type */}
         <View className="flex-1">
-          {entry.entryType === "video" && entry.mediaUri && (
-            <VideoViewer
-              videoUri={entry.mediaUri}
-              durationSeconds={entry.durationSeconds || 0}
-            />
-          )}
-          {entry.entryType === "photo" && entry.mediaUri && (
-            <PhotoViewer photoUri={entry.mediaUri} />
-          )}
-          {entry.entryType === "text" && (
-            <TextViewer text={entry.contentText || ""} />
-          )}
+          <MediaContentViewer entry={entry} />
         </View>
 
         {/* Metadata footer */}
@@ -982,6 +1153,31 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#6366f1",
     borderRadius: 2,
+    position: "absolute",
+    left: 0,
+    top: 0,
+  },
+  scrubberBuffer: {
+    height: "100%",
+    backgroundColor: "rgba(255, 255, 255, 0.5)",
+    borderRadius: 2,
+    position: "absolute",
+    left: 0,
+    top: 0,
+  },
+  bufferingOverlay: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  bufferingContainer: {
+    alignItems: "center",
+    padding: 16,
+  },
+  bufferingText: {
+    color: "#fff",
+    fontSize: 14,
+    marginTop: 12,
   },
   scrubberThumb: {
     position: "absolute",
@@ -1003,5 +1199,51 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  photoLoadingOverlay: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+  },
+  photoErrorOverlay: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  mediaLoadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#000",
+  },
+  mediaLoadingProgress: {
+    color: "#fff",
+    fontSize: 14,
+    marginTop: 16,
+  },
+  offlineContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "#000",
+  },
+  offlineIcon: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  offlineTitle: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "600",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  offlineMessage: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 24,
+    maxWidth: 280,
   },
 });

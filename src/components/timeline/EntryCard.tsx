@@ -1,9 +1,10 @@
 import { useRef, useCallback } from "react";
-import { View, Text, Image, Pressable, Animated } from "react-native";
+import { View, Text, Pressable, Animated, StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import type { Entry, EntryType } from "@/types";
 import { UploadStatusIndicator } from "@/components/ui/UploadStatusIndicator";
 import { UploadProgressBar } from "@/components/ui/UploadProgressBar";
+import { RemoteThumbnail } from "./RemoteThumbnail";
 
 const ENTRY_TYPE_ICONS: Record<EntryType, string> = {
   video: "🎬",
@@ -91,28 +92,24 @@ export function EntryCard({
 
   const renderVideoThumbnail = () => (
     <View className="relative" style={THUMBNAIL_SIZE}>
-      {entry.thumbnailUri ? (
-        <Image
-          source={{ uri: entry.thumbnailUri }}
-          className="w-full h-full rounded-lg"
-          resizeMode="cover"
-        />
-      ) : entry.mediaUri ? (
-        <Image
-          source={{ uri: entry.mediaUri }}
-          className="w-full h-full rounded-lg"
-          resizeMode="cover"
-        />
-      ) : (
-        <LinearGradient
-          colors={["#3b82f6", "#6366f1"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          className="w-full h-full rounded-lg items-center justify-center"
-        >
-          <Text className="text-2xl opacity-50">{ENTRY_TYPE_ICONS.video}</Text>
-        </LinearGradient>
-      )}
+      <RemoteThumbnail
+        thumbnailUri={entry.thumbnailUri}
+        mediaUri={entry.mediaUri}
+        remoteObjectKey={entry.mediaRemoteUrl}
+        style={[THUMBNAIL_SIZE, styles.thumbnailContainer]}
+        imageStyle={styles.thumbnailImage}
+        gradientColors={["#3b82f6", "#6366f1"]}
+        fallback={
+          <LinearGradient
+            colors={["#3b82f6", "#6366f1"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[THUMBNAIL_SIZE, styles.thumbnailGradient]}
+          >
+            <Text className="text-2xl opacity-50">{ENTRY_TYPE_ICONS.video}</Text>
+          </LinearGradient>
+        }
+      />
       {/* Play icon overlay */}
       <View className="absolute inset-0 items-center justify-center">
         <View className="w-8 h-8 bg-black/60 rounded-full items-center justify-center">
@@ -127,31 +124,45 @@ export function EntryCard({
           </Text>
         </View>
       )}
+      {/* Cloud indicator for remote-only media */}
+      {!entry.mediaUri && entry.mediaRemoteUrl && (
+        <View className="absolute top-1 left-1 bg-black/60 rounded-full w-5 h-5 items-center justify-center">
+          <Text className="text-xs">☁️</Text>
+        </View>
+      )}
     </View>
   );
 
   const renderPhotoThumbnail = () => (
     <View className="relative" style={THUMBNAIL_SIZE}>
-      {entry.thumbnailUri || entry.mediaUri ? (
-        <Image
-          source={{ uri: entry.thumbnailUri || entry.mediaUri }}
-          className="w-full h-full rounded-lg"
-          resizeMode="cover"
-        />
-      ) : (
-        <LinearGradient
-          colors={["#ec4899", "#f43f5e"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          className="w-full h-full rounded-lg items-center justify-center"
-        >
-          <Text className="text-2xl opacity-50">{ENTRY_TYPE_ICONS.photo}</Text>
-        </LinearGradient>
-      )}
+      <RemoteThumbnail
+        thumbnailUri={entry.thumbnailUri}
+        mediaUri={entry.mediaUri}
+        remoteObjectKey={entry.mediaRemoteUrl}
+        style={[THUMBNAIL_SIZE, styles.thumbnailContainer]}
+        imageStyle={styles.thumbnailImage}
+        gradientColors={["#ec4899", "#f43f5e"]}
+        fallback={
+          <LinearGradient
+            colors={["#ec4899", "#f43f5e"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[THUMBNAIL_SIZE, styles.thumbnailGradient]}
+          >
+            <Text className="text-2xl opacity-50">{ENTRY_TYPE_ICONS.photo}</Text>
+          </LinearGradient>
+        }
+      />
       {/* Photo indicator */}
       <View className="absolute bottom-1 right-1 bg-black/60 rounded-full w-5 h-5 items-center justify-center">
         <Text className="text-xs">{ENTRY_TYPE_ICONS.photo}</Text>
       </View>
+      {/* Cloud indicator for remote-only media */}
+      {!entry.mediaUri && entry.mediaRemoteUrl && (
+        <View className="absolute top-1 left-1 bg-black/60 rounded-full w-5 h-5 items-center justify-center">
+          <Text className="text-xs">☁️</Text>
+        </View>
+      )}
     </View>
   );
 
@@ -314,3 +325,18 @@ export function EntryCard({
     </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({
+  thumbnailContainer: {
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  thumbnailImage: {
+    borderRadius: 8,
+  },
+  thumbnailGradient: {
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

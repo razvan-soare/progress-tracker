@@ -14,3 +14,17 @@ export type {
   UseChunkedUploadState,
   UseChunkedUploadReturn,
 } from "./useChunkedUpload";
+export {
+  useRemoteMedia,
+  usePrefetchAdjacentMedia,
+  useResolvedMediaUri,
+} from "./useRemoteMedia";
+export type {
+  RemoteMediaState,
+  UseRemoteMediaResult,
+  UseRemoteMediaOptions,
+} from "./useRemoteMedia";
+export {
+  useAdjacentEntries,
+  useAdjacentEntriesArray,
+} from "./useAdjacentEntries";
