@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.window"]
+  },
+  "imports": {
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+    "@aws-sdk/client-s3": "https://esm.sh/@aws-sdk/client-s3@3",
+    "@aws-sdk/s3-request-presigner": "https://esm.sh/@aws-sdk/s3-request-presigner@3"
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "singleQuote": false,
+    "useTabs": false
+  }
+}
