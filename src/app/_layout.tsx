@@ -9,7 +9,7 @@ import { AuthProvider } from "@/lib/auth";
 import { ToastProvider } from "@/lib/toast";
 import { NetworkProvider } from "@/lib/network";
 import { useBackgroundServices } from "@/lib/sync";
-import { ErrorBoundary, NetworkStatusBanner, NotificationPermissionGate } from "@/components/ui";
+import { ErrorBoundary, NetworkStatusBanner, NotificationPermissionGate, NotificationDeepLinkProvider } from "@/components/ui";
 import { colors } from "@/constants/colors";
 
 import "../../global.css";
@@ -109,84 +109,86 @@ export default function RootLayout() {
               <StatusBar style="light" />
               <NetworkStatusBanner />
               <NotificationPermissionGate autoTrigger={true} delayMs={2000} />
-              <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: "#0a0a0a" },
-                animation: "slide_from_right",
-              }}
-            >
-              <Stack.Screen
-                name="(tabs)"
-                options={{
-                  animation: "fade",
-                }}
-              />
-              <Stack.Screen
-                name="project/create"
-                options={{
-                  animation: "slide_from_bottom",
-                  presentation: "modal",
-                }}
-              />
-              <Stack.Screen
-                name="project/category"
-                options={{
-                  animation: "slide_from_right",
-                }}
-              />
-              <Stack.Screen
-                name="project/cover"
-                options={{
-                  animation: "slide_from_right",
-                }}
-              />
-              <Stack.Screen
-                name="project/[id]"
-                options={{
-                  animation: "slide_from_right",
-                }}
-              />
-              <Stack.Screen
-                name="project/edit/[id]"
-                options={{
-                  animation: "slide_from_bottom",
-                  presentation: "modal",
-                }}
-              />
-              <Stack.Screen
-                name="project/timeline/[id]"
-                options={{
-                  animation: "slide_from_right",
-                }}
-              />
-              <Stack.Screen
-                name="entry/camera/[projectId]"
-                options={{
-                  animation: "slide_from_bottom",
-                  presentation: "fullScreenModal",
-                }}
-              />
-              <Stack.Screen
-                name="entry/create/[projectId]"
-                options={{
-                  animation: "slide_from_right",
-                }}
-              />
-              <Stack.Screen
-                name="entry/view/[id]"
-                options={{
-                  animation: "slide_from_bottom",
-                  presentation: "fullScreenModal",
-                }}
-              />
-              <Stack.Screen
-                name="settings/sync"
-                options={{
-                  animation: "slide_from_right",
-                }}
-              />
-            </Stack>
+              <NotificationDeepLinkProvider>
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: { backgroundColor: "#0a0a0a" },
+                    animation: "slide_from_right",
+                  }}
+                >
+                  <Stack.Screen
+                    name="(tabs)"
+                    options={{
+                      animation: "fade",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="project/create"
+                    options={{
+                      animation: "slide_from_bottom",
+                      presentation: "modal",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="project/category"
+                    options={{
+                      animation: "slide_from_right",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="project/cover"
+                    options={{
+                      animation: "slide_from_right",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="project/[id]"
+                    options={{
+                      animation: "slide_from_right",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="project/edit/[id]"
+                    options={{
+                      animation: "slide_from_bottom",
+                      presentation: "modal",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="project/timeline/[id]"
+                    options={{
+                      animation: "slide_from_right",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="entry/camera/[projectId]"
+                    options={{
+                      animation: "slide_from_bottom",
+                      presentation: "fullScreenModal",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="entry/create/[projectId]"
+                    options={{
+                      animation: "slide_from_right",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="entry/view/[id]"
+                    options={{
+                      animation: "slide_from_bottom",
+                      presentation: "fullScreenModal",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="settings/sync"
+                    options={{
+                      animation: "slide_from_right",
+                    }}
+                  />
+                </Stack>
+              </NotificationDeepLinkProvider>
             </ToastProvider>
           </QueryClientProvider>
         </AuthProvider>

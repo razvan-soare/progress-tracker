@@ -17,6 +17,26 @@ export type {
   NotificationSchedulerEventListener,
 } from './notification-scheduler';
 
+export {
+  parseNotificationData,
+  validateProjectExists,
+  getNavigationTarget,
+  buildRoutePath,
+  extractNotificationData,
+  storePendingIntent,
+  consumePendingIntent,
+  hasPendingIntent,
+  clearPendingIntent,
+  getLastNotificationResponse,
+  processNotificationResponse,
+} from './navigation';
+export type {
+  NotificationType,
+  NavigationTarget,
+  ParsedNotificationData,
+  NavigationIntent,
+} from './navigation';
+
 /**
  * Configure default notification behavior
  */

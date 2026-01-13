@@ -34,3 +34,8 @@ export { useNotificationPermissionFlow } from "./useNotificationPermissionFlow";
 export type { UseNotificationPermissionFlowResult } from "./useNotificationPermissionFlow";
 export { useNotificationScheduler } from "./useNotificationScheduler";
 export type { UseNotificationSchedulerResult } from "./useNotificationScheduler";
+export { useNotificationDeepLink } from "./useNotificationDeepLink";
+export type {
+  UseNotificationDeepLinkOptions,
+  UseNotificationDeepLinkResult,
+} from "./useNotificationDeepLink";

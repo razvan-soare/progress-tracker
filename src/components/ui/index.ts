@@ -43,3 +43,5 @@ export type {
 } from "./NotificationPermissionModal";
 export { NotificationPermissionGate } from "./NotificationPermissionGate";
 export type { NotificationPermissionGateProps } from "./NotificationPermissionGate";
+export { NotificationDeepLinkProvider } from "./NotificationDeepLinkProvider";
+export type { NotificationDeepLinkProviderProps } from "./NotificationDeepLinkProvider";
