@@ -9,7 +9,7 @@ import { AuthProvider } from "@/lib/auth";
 import { ToastProvider } from "@/lib/toast";
 import { NetworkProvider } from "@/lib/network";
 import { useBackgroundServices } from "@/lib/sync";
-import { ErrorBoundary, NetworkStatusBanner } from "@/components/ui";
+import { ErrorBoundary, NetworkStatusBanner, NotificationPermissionGate } from "@/components/ui";
 import { colors } from "@/constants/colors";
 
 import "../../global.css";
@@ -108,6 +108,7 @@ export default function RootLayout() {
             <ToastProvider>
               <StatusBar style="light" />
               <NetworkStatusBanner />
+              <NotificationPermissionGate autoTrigger={true} delayMs={2000} />
               <Stack
               screenOptions={{
                 headerShown: false,

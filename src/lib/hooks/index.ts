@@ -28,3 +28,7 @@ export {
   useAdjacentEntries,
   useAdjacentEntriesArray,
 } from "./useAdjacentEntries";
+export { useNotificationPermissions } from "./useNotificationPermissions";
+export type { UseNotificationPermissionsResult } from "./useNotificationPermissions";
+export { useNotificationPermissionFlow } from "./useNotificationPermissionFlow";
+export type { UseNotificationPermissionFlowResult } from "./useNotificationPermissionFlow";

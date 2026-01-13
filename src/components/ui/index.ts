@@ -33,3 +33,13 @@ export { GlobalUploadIndicator } from "./GlobalUploadIndicator";
 export type { GlobalUploadIndicatorProps } from "./GlobalUploadIndicator";
 export { ConflictResolutionModal } from "./ConflictResolutionModal";
 export type { ConflictResolutionModalProps } from "./ConflictResolutionModal";
+export {
+  NotificationPermissionModal,
+  NotificationPermissionDeniedModal,
+} from "./NotificationPermissionModal";
+export type {
+  NotificationPermissionModalProps,
+  NotificationPermissionDeniedModalProps,
+} from "./NotificationPermissionModal";
+export { NotificationPermissionGate } from "./NotificationPermissionGate";
+export type { NotificationPermissionGateProps } from "./NotificationPermissionGate";

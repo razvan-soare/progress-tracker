@@ -30,3 +30,8 @@ export {
   useSyncSettingsStore,
   type SyncSettings,
 } from "./sync-settings-store";
+export {
+  useNotificationPermissionsStore,
+  type NotificationPermissionStatus,
+  type NotificationPermissionsState,
+} from "./notification-permissions-store";
