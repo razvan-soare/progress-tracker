@@ -35,3 +35,17 @@ export {
   type NotificationPermissionStatus,
   type NotificationPermissionsState,
 } from "./notification-permissions-store";
+export {
+  useNotificationStore,
+  type NotificationState,
+  type NotificationStore,
+  type ReceivedNotification,
+  type ScheduledNotificationRef,
+  type ProjectNotificationData,
+} from "./notification-store";
+export {
+  useNotifications,
+  useProjectNotificationSync,
+  useProjectNotifications,
+  useProjectMutationsWithNotifications,
+} from "./use-notifications";
