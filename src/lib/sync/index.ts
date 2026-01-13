@@ -107,6 +107,3 @@ export {
   useBackgroundServices,
   type UseBackgroundServicesOptions,
 } from "./useBackgroundServices";
-
-// Test utilities (for development testing)
-export { runSyncQueueTests } from "./__tests__/sync-queue-service.test";
