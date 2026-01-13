@@ -7,7 +7,8 @@ import { getDatabase } from "@/lib/db/database";
 export type NotificationType =
   | "project_reminder"
   | "streak_alert"
-  | "monthly_report";
+  | "monthly_report"
+  | "weekly_summary";
 
 /**
  * Deep link navigation target
@@ -116,6 +117,14 @@ export function parseNotificationData(
     };
   }
 
+  // Handle weekly summary notifications
+  if (type === "weekly_summary") {
+    return {
+      type: "weekly_summary",
+      extra: data,
+    };
+  }
+
   return null;
 }
 
@@ -200,6 +209,11 @@ export async function getNavigationTarget(
           };
         }
       }
+      return homeTarget;
+    }
+
+    case "weekly_summary": {
+      // For weekly summaries, navigate to home to see all projects
       return homeTarget;
     }
 

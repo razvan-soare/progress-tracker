@@ -53,8 +53,8 @@ const channelConfigs: ChannelConfig[] = [
   },
   {
     id: NotificationChannels.REPORTS,
-    name: 'Monthly Reports',
-    description: 'Monthly summary reports of your progress',
+    name: 'Progress Reports',
+    description: 'Weekly and monthly summary reports of your progress',
     importance: Notifications.AndroidImportance.DEFAULT,
     sound: 'default',
     vibrationPattern: [0, 250],

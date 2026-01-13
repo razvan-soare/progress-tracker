@@ -18,6 +18,20 @@ export type {
 } from './notification-scheduler';
 
 export {
+  AlertsScheduler,
+  getAlertsScheduler,
+  resetAlertsScheduler,
+} from './alerts-scheduler';
+export type {
+  AlertsSchedulerConfig,
+  AlertsSchedulerState,
+  AlertsSchedulerEvent,
+  AlertsSchedulerEventListener,
+  ProjectStreakInfo,
+  WeeklySummaryStats,
+} from './alerts-scheduler';
+
+export {
   parseNotificationData,
   validateProjectExists,
   getNavigationTarget,

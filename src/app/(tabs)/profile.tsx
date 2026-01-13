@@ -84,6 +84,13 @@ export default function ProfileScreen() {
           </Text>
           <Card className="mx-4 p-0 overflow-hidden">
             <SettingsItem
+              title="Notifications"
+              description="Streak alerts, weekly summaries, and reminders"
+              icon="🔔"
+              onPress={() => router.push("/settings/notifications" as Href)}
+            />
+            <View className="h-px bg-border mx-4" />
+            <SettingsItem
               title="Sync & Storage"
               description="Manage uploads, storage, and sync settings"
               icon="☁️"

@@ -49,3 +49,11 @@ export {
   useProjectNotifications,
   useProjectMutationsWithNotifications,
 } from "./use-notifications";
+export {
+  useNotificationAlertsStore,
+  type NotificationAlertsSettings,
+} from "./notification-alerts-store";
+export {
+  useNotificationAlerts,
+  useStreakAlertClearer,
+} from "./use-notification-alerts";

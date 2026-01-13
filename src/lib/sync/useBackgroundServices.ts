@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { getBackgroundUploadProcessor } from "./background-upload-processor";
 import { getMediaCleanupService } from "./media-cleanup-service";
 import { getNotificationScheduler } from "@/lib/notifications/notification-scheduler";
+import { getAlertsScheduler } from "@/lib/notifications/alerts-scheduler";
 
 /**
  * Options for the useBackgroundServices hook
@@ -13,6 +14,8 @@ export interface UseBackgroundServicesOptions {
   enableCleanupService?: boolean;
   /** Whether to start the notification scheduler (default: true) */
   enableNotificationScheduler?: boolean;
+  /** Whether to start the alerts scheduler (default: true) */
+  enableAlertsScheduler?: boolean;
 }
 
 /**
@@ -23,6 +26,7 @@ export interface UseBackgroundServicesOptions {
  * - BackgroundUploadProcessor: Processes pending media uploads
  * - MediaCleanupService: Automatically cleans up synced local media
  * - NotificationScheduler: Schedules project reminder notifications
+ * - AlertsScheduler: Schedules streak alerts and weekly summaries
  *
  * @example
  * ```tsx
@@ -45,11 +49,13 @@ export function useBackgroundServices(
     enableUploadProcessor = true,
     enableCleanupService = true,
     enableNotificationScheduler = true,
+    enableAlertsScheduler = true,
   } = options;
 
   const uploadProcessorStarted = useRef(false);
   const cleanupServiceStarted = useRef(false);
   const notificationSchedulerStarted = useRef(false);
+  const alertsSchedulerStarted = useRef(false);
 
   // Start/stop upload processor based on enableUploadProcessor
   useEffect(() => {
@@ -113,4 +119,25 @@ export function useBackgroundServices(
       notificationSchedulerStarted.current = false;
     };
   }, [enableNotificationScheduler]);
+
+  // Start/stop alerts scheduler based on enableAlertsScheduler
+  useEffect(() => {
+    if (!enableAlertsScheduler) {
+      return;
+    }
+
+    if (alertsSchedulerStarted.current) {
+      return;
+    }
+
+    alertsSchedulerStarted.current = true;
+    const alertsScheduler = getAlertsScheduler();
+    alertsScheduler.start();
+
+    return () => {
+      const scheduler = getAlertsScheduler();
+      scheduler.stop();
+      alertsSchedulerStarted.current = false;
+    };
+  }, [enableAlertsScheduler]);
 }

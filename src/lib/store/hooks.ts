@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useProjectsStore, ProjectStats } from "./projects-store";
-import { useEntriesStore, EntryFilter, SortOrder } from "./entries-store";
+import { useEntriesStore, EntryFilter, SortOrder, CreateEntryInput } from "./entries-store";
+import { getAlertsScheduler } from "@/lib/notifications/alerts-scheduler";
 import type { Project, Entry, EntryType } from "@/types";
 
 /**
@@ -246,13 +247,28 @@ export function useProjectMutations() {
  * Returns mutation functions for creating, updating, deleting, and restoring entries.
  */
 export function useEntryMutations() {
-  const createEntry = useEntriesStore((state) => state.createEntry);
+  const createEntryBase = useEntriesStore((state) => state.createEntry);
   const updateEntry = useEntriesStore((state) => state.updateEntry);
   const deleteEntry = useEntriesStore((state) => state.deleteEntry);
   const restoreEntry = useEntriesStore((state) => state.restoreEntry);
   const isLoading = useEntriesStore((state) => state.isLoading);
   const error = useEntriesStore((state) => state.error);
   const clearError = useEntriesStore((state) => state.clearError);
+
+  // Wrapper that clears streak alerts when a new entry is created
+  const createEntry = useCallback(
+    async (input: CreateEntryInput) => {
+      const entry = await createEntryBase(input);
+      // Clear streak alert for this project since user just added an entry
+      try {
+        getAlertsScheduler().clearStreakAlertForProject(input.projectId);
+      } catch {
+        // Ignore errors - alert clearing is not critical
+      }
+      return entry;
+    },
+    [createEntryBase]
+  );
 
   return {
     createEntry,
