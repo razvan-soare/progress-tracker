@@ -2,7 +2,7 @@ import { View, Text, ViewProps, ActivityIndicator } from "react-native";
 import { Button } from "./Button";
 import { colors } from "@/constants/colors";
 
-export type PermissionType = "camera" | "microphone" | "mediaLibrary" | "cameraAndMicrophone";
+export type PermissionType = "camera" | "microphone" | "mediaLibrary" | "cameraAndMicrophone" | "notification";
 
 interface PermissionRequestProps extends ViewProps {
   permissionType: PermissionType;
@@ -42,6 +42,13 @@ const PERMISSION_CONTENT: Record<
     description:
       "To record videos for your progress entries, we need access to your camera and microphone. Your media stays on your device.",
     buttonLabel: "Allow Access",
+  },
+  notification: {
+    icon: "🔔",
+    title: "Notification Access Needed",
+    description:
+      "To send you reminders to update your progress, we need permission to send notifications. You can customize when and how often you receive them.",
+    buttonLabel: "Allow Notifications",
   },
 };
 

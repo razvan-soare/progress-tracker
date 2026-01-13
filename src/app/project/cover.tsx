@@ -1,10 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { View, Text, Image, Pressable, ActivityIndicator, Alert, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, Href } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Button, IconButton, SuccessCelebration, ErrorView, PermissionRequest, PermissionDenied } from "@/components/ui";
 import { useWizardStore, useProjectsStore } from "@/lib/store";
+import { useNotifications } from "@/lib/store/use-notifications";
 import { useToast } from "@/lib/toast";
 import { useBackHandler, useDebouncedPress, useMediaPermissions } from "@/lib/hooks";
 import { pickImageFromCamera, pickImageFromLibrary, deleteImage } from "@/lib/utils";
@@ -26,13 +27,18 @@ const CATEGORY_ICONS: Record<string, string> = {
   custom: "✨",
 };
 
-type PermissionModalType = "camera" | "mediaLibrary" | null;
+type PermissionModalType = "camera" | "mediaLibrary" | "notification" | null;
 
 export default function CoverImageScreen() {
   const router = useRouter();
-  const { showError } = useToast();
+  const { showError, showSuccess } = useToast();
   const { formData, previousStep, resetWizard, setFormField, isDirty } = useWizardStore();
   const { createProject } = useProjectsStore();
+  const {
+    permissionStatus: notificationPermissionStatus,
+    requestPermissions: requestNotificationPermissions,
+    syncProjectNotifications,
+  } = useNotifications();
   const {
     permissions,
     requestCameraPermission,
@@ -153,6 +159,8 @@ export default function CoverImageScreen() {
     }
   }, [permissions.mediaLibrary, proceedWithLibrary]);
 
+  const [pendingCreateAfterPermission, setPendingCreateAfterPermission] = useState(false);
+
   const handleRequestPermission = useCallback(async () => {
     setIsRequestingPermission(true);
 
@@ -169,10 +177,19 @@ export default function CoverImageScreen() {
         setPermissionModal(null);
         proceedWithLibrary();
       }
+    } else if (permissionModal === "notification") {
+      granted = await requestNotificationPermissions();
+      setPermissionModal(null);
+      if (granted) {
+        // Set flag to trigger project creation after permission granted
+        setPendingCreateAfterPermission(true);
+      } else {
+        showError("Notification permission is required for reminders. You can create the project without reminders or enable them later.");
+      }
     }
 
     setIsRequestingPermission(false);
-  }, [permissionModal, requestCameraPermission, requestMediaLibraryPermission, proceedWithCamera, proceedWithLibrary]);
+  }, [permissionModal, requestCameraPermission, requestMediaLibraryPermission, proceedWithCamera, proceedWithLibrary, requestNotificationPermissions, showError]);
 
   const handleOpenSettings = useCallback(() => {
     openSettings();
@@ -212,6 +229,12 @@ export default function CoverImageScreen() {
       return;
     }
 
+    // If reminders are enabled, check/request notification permissions first
+    if (formData.reminderEnabled && notificationPermissionStatus !== "granted") {
+      setPermissionModal("notification");
+      return;
+    }
+
     setIsCreating(true);
     setError(null);
 
@@ -229,6 +252,16 @@ export default function CoverImageScreen() {
       // Add to sync queue for cloud sync
       await addToSyncQueue(project.id);
 
+      // Schedule notifications if reminders are enabled
+      if (project.reminderTime && project.reminderDays?.length) {
+        try {
+          await syncProjectNotifications(project);
+        } catch (notificationError) {
+          // Log but don't fail project creation for notification errors
+          console.warn("Failed to schedule notifications:", notificationError);
+        }
+      }
+
       // Store project ID for navigation after celebration
       setCreatedProjectId(project.id);
 
@@ -240,7 +273,15 @@ export default function CoverImageScreen() {
       showError(message);
       setIsCreating(false);
     }
-  }, [formData, createProject, showError]);
+  }, [formData, createProject, showError, notificationPermissionStatus, syncProjectNotifications]);
+
+  // Effect to trigger project creation after notification permission is granted
+  useEffect(() => {
+    if (pendingCreateAfterPermission) {
+      setPendingCreateAfterPermission(false);
+      handleCreateProject();
+    }
+  }, [pendingCreateAfterPermission, handleCreateProject]);
 
   const handleCelebrationComplete = useCallback(() => {
     setShowCelebration(false);
@@ -517,7 +558,7 @@ export default function CoverImageScreen() {
           onPress={handleClosePermissionModal}
         >
           <Pressable onPress={() => {}}>
-            {permissionModal !== null && (
+            {permissionModal !== null && permissionModal !== "notification" && (
               permissions[permissionModal] === "denied" ? (
                 <PermissionDenied
                   permissionType={permissionModal}
@@ -528,6 +569,23 @@ export default function CoverImageScreen() {
               ) : (
                 <PermissionRequest
                   permissionType={permissionModal}
+                  onRequestPermission={handleRequestPermission}
+                  loading={isRequestingPermission}
+                  compact
+                />
+              )
+            )}
+            {permissionModal === "notification" && (
+              notificationPermissionStatus === "denied" ? (
+                <PermissionDenied
+                  permissionType="notification"
+                  onOpenSettings={handleOpenSettings}
+                  onCancel={handleClosePermissionModal}
+                  compact
+                />
+              ) : (
+                <PermissionRequest
+                  permissionType="notification"
                   onRequestPermission={handleRequestPermission}
                   loading={isRequestingPermission}
                   compact

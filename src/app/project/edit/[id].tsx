@@ -27,6 +27,7 @@ import {
   PermissionDenied,
 } from "@/components/ui";
 import { useProjectsStore } from "@/lib/store";
+import { useNotifications } from "@/lib/store/use-notifications";
 import { useToast } from "@/lib/toast";
 import { useBackHandler, useDebouncedPress, useMediaPermissions } from "@/lib/hooks";
 import {
@@ -41,7 +42,7 @@ import { getDatabase } from "@/lib/db/database";
 import { colors } from "@/constants/colors";
 import type { ProjectCategory, Project } from "@/types";
 
-type PermissionModalType = "camera" | "mediaLibrary" | null;
+type PermissionModalType = "camera" | "mediaLibrary" | "notification" | null;
 
 const MAX_NAME_LENGTH = 50;
 const MAX_DESCRIPTION_LENGTH = 200;
@@ -182,6 +183,12 @@ export default function EditProjectScreen() {
     requestMediaLibraryPermission,
     openSettings
   } = useMediaPermissions();
+  const {
+    permissionStatus: notificationPermissionStatus,
+    requestPermissions: requestNotificationPermissions,
+    syncProjectNotifications,
+    cancelProjectReminders,
+  } = useNotifications();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -502,6 +509,8 @@ export default function EditProjectScreen() {
     }
   }, [permissions.mediaLibrary, proceedWithLibrary]);
 
+  const [pendingSaveAfterPermission, setPendingSaveAfterPermission] = useState(false);
+
   const handleRequestPermission = useCallback(async () => {
     setIsRequestingPermission(true);
 
@@ -518,10 +527,19 @@ export default function EditProjectScreen() {
         setPermissionModal(null);
         proceedWithLibrary();
       }
+    } else if (permissionModal === "notification") {
+      granted = await requestNotificationPermissions();
+      setPermissionModal(null);
+      if (granted) {
+        // Set flag to trigger save after permission granted
+        setPendingSaveAfterPermission(true);
+      } else {
+        showError("Notification permission is required for reminders. You can save without reminders or enable them later.");
+      }
     }
 
     setIsRequestingPermission(false);
-  }, [permissionModal, requestCameraPermission, requestMediaLibraryPermission, proceedWithCamera, proceedWithLibrary]);
+  }, [permissionModal, requestCameraPermission, requestMediaLibraryPermission, proceedWithCamera, proceedWithLibrary, requestNotificationPermissions, showError]);
 
   const handleOpenSettings = useCallback(() => {
     openSettings();
@@ -556,11 +574,17 @@ export default function EditProjectScreen() {
   const handleSave = useCallback(async () => {
     if (!id || !canSave) return;
 
+    // If reminders are being enabled, check/request notification permissions first
+    if (formData.reminderEnabled && !originalData?.reminderEnabled && notificationPermissionStatus !== "granted") {
+      setPermissionModal("notification");
+      return;
+    }
+
     setIsSaving(true);
     setError(null);
 
     try {
-      await updateProject(id, {
+      const updatedProject = await updateProject(id, {
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,
         category: formData.category,
@@ -571,6 +595,14 @@ export default function EditProjectScreen() {
       });
 
       await addToSyncQueue(id, "update");
+
+      // Sync notifications based on updated reminder settings
+      try {
+        await syncProjectNotifications(updatedProject);
+      } catch (notificationError) {
+        // Log but don't fail save for notification errors
+        console.warn("Failed to sync notifications:", notificationError);
+      }
 
       showSuccess("Project updated successfully");
       // Navigate back to project detail
@@ -583,7 +615,15 @@ export default function EditProjectScreen() {
     } finally {
       setIsSaving(false);
     }
-  }, [id, canSave, formData, updateProject, router, showSuccess, showError]);
+  }, [id, canSave, formData, originalData, updateProject, router, showSuccess, showError, notificationPermissionStatus, syncProjectNotifications]);
+
+  // Effect to trigger save after notification permission is granted
+  useEffect(() => {
+    if (pendingSaveAfterPermission) {
+      setPendingSaveAfterPermission(false);
+      handleSave();
+    }
+  }, [pendingSaveAfterPermission, handleSave]);
 
   const handleDelete = useCallback(() => {
     if (!id) return;
@@ -628,6 +668,14 @@ export default function EditProjectScreen() {
     setError(null);
 
     try {
+      // Cancel any scheduled notifications for this project first
+      try {
+        await cancelProjectReminders(id);
+      } catch (notificationError) {
+        // Log but don't fail deletion for notification errors
+        console.warn("Failed to cancel notifications:", notificationError);
+      }
+
       await deleteProject(id);
       await addToSyncQueue(id, "delete");
 
@@ -641,7 +689,7 @@ export default function EditProjectScreen() {
       showError(message);
       setIsDeleting(false);
     }
-  }, [id, deleteProject, router, showSuccess, showError]);
+  }, [id, deleteProject, router, showSuccess, showError, cancelProjectReminders]);
 
   if (isLoading) {
     return <LoadingSkeleton />;
@@ -1057,7 +1105,7 @@ export default function EditProjectScreen() {
             onPress={handleClosePermissionModal}
           >
             <Pressable onPress={() => {}}>
-              {permissionModal !== null && (
+              {permissionModal !== null && permissionModal !== "notification" && (
                 permissions[permissionModal] === "denied" ? (
                   <PermissionDenied
                     permissionType={permissionModal}
@@ -1068,6 +1116,23 @@ export default function EditProjectScreen() {
                 ) : (
                   <PermissionRequest
                     permissionType={permissionModal}
+                    onRequestPermission={handleRequestPermission}
+                    loading={isRequestingPermission}
+                    compact
+                  />
+                )
+              )}
+              {permissionModal === "notification" && (
+                notificationPermissionStatus === "denied" ? (
+                  <PermissionDenied
+                    permissionType="notification"
+                    onOpenSettings={handleOpenSettings}
+                    onCancel={handleClosePermissionModal}
+                    compact
+                  />
+                ) : (
+                  <PermissionRequest
+                    permissionType="notification"
                     onRequestPermission={handleRequestPermission}
                     loading={isRequestingPermission}
                     compact

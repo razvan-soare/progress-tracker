@@ -1,7 +1,7 @@
 import { View, Text, ViewProps, Platform } from "react-native";
 import { Button } from "./Button";
 
-export type DeniedPermissionType = "camera" | "microphone" | "mediaLibrary" | "cameraAndMicrophone";
+export type DeniedPermissionType = "camera" | "microphone" | "mediaLibrary" | "cameraAndMicrophone" | "notification";
 
 interface PermissionDeniedProps extends ViewProps {
   permissionType: DeniedPermissionType;
@@ -37,6 +37,12 @@ const PERMISSION_CONTENT: Record<
     title: "Camera & Microphone Access Denied",
     description:
       "Camera and microphone access was denied. To record videos, please enable both permissions in your device settings.",
+  },
+  notification: {
+    icon: "🔔",
+    title: "Notification Access Denied",
+    description:
+      "Notification access was denied. To receive reminders to update your progress, please enable notifications in your device settings.",
   },
 };
 

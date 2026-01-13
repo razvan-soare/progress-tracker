@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { IconButton, Button, Card, ErrorView, ProjectDetailSkeleton } from "@/components/ui";
 import { RecentEntries, ProgressComparison } from "@/components/entry";
 import { useProjectsStore, useEntriesStore } from "@/lib/store";
+import { useNotifications } from "@/lib/store/use-notifications";
 import { useToast } from "@/lib/toast";
 import { useDebouncedPress } from "@/lib/hooks";
 import { colors } from "@/constants/colors";
@@ -163,6 +164,7 @@ export default function ProjectDetailScreen() {
     projectStats,
   } = useProjectsStore();
   const { fetchEntries, entriesByProject } = useEntriesStore();
+  const { cancelProjectReminders } = useNotifications();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -288,6 +290,14 @@ export default function ProjectDetailScreen() {
 
     if (!value) {
       try {
+        // Cancel scheduled notifications first
+        try {
+          await cancelProjectReminders(id);
+        } catch (notificationError) {
+          // Log but don't fail for notification errors
+          console.warn("Failed to cancel notifications:", notificationError);
+        }
+
         await updateProject(id, {
           reminderTime: undefined,
           reminderDays: undefined,
@@ -298,6 +308,7 @@ export default function ProjectDetailScreen() {
         showError("Failed to update reminder settings");
       }
     } else {
+      // Navigate to edit screen to configure reminder settings
       router.push(`/project/edit/${id}` as Href);
     }
   };
