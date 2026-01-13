@@ -5,6 +5,18 @@ import { setupNotificationChannels, NotificationChannels } from './channels';
 export { NotificationChannels } from './channels';
 export type { NotificationChannelId } from './channels';
 
+export {
+  NotificationScheduler,
+  getNotificationScheduler,
+  resetNotificationScheduler,
+} from './notification-scheduler';
+export type {
+  NotificationSchedulerConfig,
+  NotificationSchedulerState,
+  NotificationSchedulerEvent,
+  NotificationSchedulerEventListener,
+} from './notification-scheduler';
+
 /**
  * Configure default notification behavior
  */

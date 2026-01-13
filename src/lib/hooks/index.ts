@@ -32,3 +32,5 @@ export { useNotificationPermissions } from "./useNotificationPermissions";
 export type { UseNotificationPermissionsResult } from "./useNotificationPermissions";
 export { useNotificationPermissionFlow } from "./useNotificationPermissionFlow";
 export type { UseNotificationPermissionFlowResult } from "./useNotificationPermissionFlow";
+export { useNotificationScheduler } from "./useNotificationScheduler";
+export type { UseNotificationSchedulerResult } from "./useNotificationScheduler";
