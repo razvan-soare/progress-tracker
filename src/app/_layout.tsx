@@ -187,6 +187,18 @@ export default function RootLayout() {
                       animation: "slide_from_right",
                     }}
                   />
+                  <Stack.Screen
+                    name="report/list/[projectId]"
+                    options={{
+                      animation: "slide_from_right",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="report/[id]"
+                    options={{
+                      animation: "slide_from_right",
+                    }}
+                  />
                 </Stack>
               </NotificationDeepLinkProvider>
             </ToastProvider>

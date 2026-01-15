@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useProjectsStore, ProjectStats } from "./projects-store";
 import { useEntriesStore, EntryFilter, SortOrder, CreateEntryInput } from "./entries-store";
+import { useReportsStore } from "./reports-store";
 import { getAlertsScheduler } from "@/lib/notifications/alerts-scheduler";
-import type { Project, Entry, EntryType } from "@/types";
+import type { Project, Entry, EntryType, Report } from "@/types";
 
 /**
  * Hook for accessing all projects.
@@ -277,6 +278,72 @@ export function useEntryMutations() {
     restoreEntry,
     isLoading,
     error,
+    clearError,
+  };
+}
+
+/**
+ * Hook for accessing reports for a project.
+ * Fetches reports on mount and provides list, loading, and error states.
+ */
+export function useReports(projectId: string | null | undefined) {
+  const reportsByProject = useReportsStore((state) => state.reportsByProject);
+  const isLoading = useReportsStore((state) => state.isLoading);
+  const error = useReportsStore((state) => state.error);
+  const fetchReportsByProjectId = useReportsStore((state) => state.fetchReportsByProjectId);
+  const clearError = useReportsStore((state) => state.clearError);
+
+  useEffect(() => {
+    if (projectId) {
+      fetchReportsByProjectId(projectId);
+    }
+  }, [projectId, fetchReportsByProjectId]);
+
+  const reports = projectId ? reportsByProject[projectId] ?? [] : [];
+
+  const refetch = useCallback(() => {
+    if (!projectId) return Promise.resolve([]);
+    return fetchReportsByProjectId(projectId);
+  }, [projectId, fetchReportsByProjectId]);
+
+  return {
+    reports,
+    isLoading,
+    error,
+    refetch,
+    clearError,
+  };
+}
+
+/**
+ * Hook for accessing a single report by ID.
+ * Provides report data, loading, and error states.
+ */
+export function useReport(reportId: string | null | undefined) {
+  const reportsById = useReportsStore((state) => state.reportsById);
+  const isLoading = useReportsStore((state) => state.isLoading);
+  const error = useReportsStore((state) => state.error);
+  const fetchReportById = useReportsStore((state) => state.fetchReportById);
+  const clearError = useReportsStore((state) => state.clearError);
+
+  const report = reportId ? reportsById[reportId] : null;
+
+  useEffect(() => {
+    if (reportId && !reportsById[reportId]) {
+      fetchReportById(reportId);
+    }
+  }, [reportId, reportsById, fetchReportById]);
+
+  const refetch = useCallback(() => {
+    if (!reportId) return Promise.resolve(null);
+    return fetchReportById(reportId);
+  }, [reportId, fetchReportById]);
+
+  return {
+    report,
+    isLoading,
+    error,
+    refetch,
     clearError,
   };
 }
