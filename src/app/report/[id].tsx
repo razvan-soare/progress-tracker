@@ -7,12 +7,19 @@ import {
   RefreshControl,
   Animated,
   Image,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import ViewShot from "react-native-view-shot";
+import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import { IconButton, ErrorView, Skeleton } from "@/components/ui";
+import { ShareableReportCard } from "@/components/report";
 import { useReport, useEntry, useProject } from "@/lib/store/hooks";
+import { useToast } from "@/lib/toast";
 import { colors } from "@/constants/colors";
 import type { Entry, Report } from "@/types";
 
@@ -336,6 +343,7 @@ function EntryBreakdown({ videos, photos, textEntries }: EntryBreakdownProps) {
 export default function ReportDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { showSuccess, showError } = useToast();
 
   const { report, isLoading: reportLoading, error: reportError, refetch: refetchReport } = useReport(id);
   const { entry: firstEntry, isLoading: firstLoading } = useEntry(report?.firstEntryId);
@@ -344,6 +352,11 @@ export default function ReportDetailScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [showShareOptions, setShowShareOptions] = useState(false);
+
+  const viewShotRef = useRef<ViewShot>(null);
+  const comparisonOnlyRef = useRef<ViewShot>(null);
 
   const isLoading = reportLoading || firstLoading || lastLoading || projectLoading;
 
@@ -370,6 +383,58 @@ export default function ReportDetailScreen() {
   const handleViewEntry = useCallback((entryId: string) => {
     router.push(`/entry/view/${entryId}` as Href);
   }, [router]);
+
+  const handleSharePress = useCallback(() => {
+    setShowShareOptions(true);
+  }, []);
+
+  const handleShare = useCallback(async (comparisonOnly: boolean = false) => {
+    setShowShareOptions(false);
+    setIsSharing(true);
+
+    try {
+      // Check if sharing is available
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        showError("Sharing is not available on this device");
+        setIsSharing(false);
+        return;
+      }
+
+      // Capture the view shot
+      const ref = comparisonOnly ? comparisonOnlyRef : viewShotRef;
+      if (!ref.current?.capture) {
+        showError("Unable to capture report image");
+        setIsSharing(false);
+        return;
+      }
+
+      const uri = await ref.current.capture();
+
+      // Create a proper file path for sharing
+      const fileName = `progress-report-${report?.month || "report"}-${Date.now()}.png`;
+      const filePath = `${FileSystem.cacheDirectory}${fileName}`;
+
+      // Copy to cache directory with proper extension
+      await FileSystem.copyAsync({
+        from: uri,
+        to: filePath,
+      });
+
+      // Share the image
+      await Sharing.shareAsync(filePath, {
+        mimeType: "image/png",
+        dialogTitle: `Share ${project?.name || "Progress"} Report - ${report?.month || ""}`,
+      });
+
+      showSuccess("Report shared successfully");
+    } catch (error) {
+      console.error("Error sharing report:", error);
+      showError("Failed to share report. Please try again.");
+    } finally {
+      setIsSharing(false);
+    }
+  }, [report, project, showSuccess, showError]);
 
   // Calculate days active - count unique days with entries
   const getDaysActive = (report: Report): number => {
@@ -456,6 +521,13 @@ export default function ReportDetailScreen() {
         >
           {project?.name ? `${project.name}` : "Report"}
         </Text>
+        <IconButton
+          icon="↗"
+          variant="default"
+          size="md"
+          onPress={handleSharePress}
+          accessibilityLabel="Share report"
+        />
       </View>
 
       <ScrollView
@@ -596,6 +668,123 @@ export default function ReportDetailScreen() {
           </AnimatedFadeIn>
         )}
       </ScrollView>
+
+      {/* Offscreen ViewShot for full report capture */}
+      <View style={{ position: "absolute", left: -9999, top: -9999 }}>
+        <ViewShot
+          ref={viewShotRef}
+          options={{ format: "png", quality: 1 }}
+        >
+          <ShareableReportCard
+            report={report!}
+            project={project}
+            firstEntry={firstEntry}
+            lastEntry={lastEntry}
+            firstEntryDeleted={Boolean(firstEntryDeleted)}
+            lastEntryDeleted={Boolean(lastEntryDeleted)}
+            comparisonOnly={false}
+          />
+        </ViewShot>
+      </View>
+
+      {/* Offscreen ViewShot for comparison-only capture */}
+      <View style={{ position: "absolute", left: -9999, top: -9999 }}>
+        <ViewShot
+          ref={comparisonOnlyRef}
+          options={{ format: "png", quality: 1 }}
+        >
+          <ShareableReportCard
+            report={report!}
+            project={project}
+            firstEntry={firstEntry}
+            lastEntry={lastEntry}
+            firstEntryDeleted={Boolean(firstEntryDeleted)}
+            lastEntryDeleted={Boolean(lastEntryDeleted)}
+            comparisonOnly={true}
+          />
+        </ViewShot>
+      </View>
+
+      {/* Share Options Modal */}
+      <Modal
+        visible={showShareOptions}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowShareOptions(false)}
+      >
+        <Pressable
+          className="flex-1 bg-black/60 justify-end"
+          onPress={() => setShowShareOptions(false)}
+        >
+          <Pressable
+            className="bg-surface rounded-t-2xl"
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View className="w-12 h-1 bg-border rounded-full self-center mt-3" />
+            <View className="p-4">
+              <Text className="text-text-primary text-lg font-semibold text-center mb-4">
+                Share Report
+              </Text>
+
+              <Pressable
+                className="flex-row items-center bg-background rounded-xl p-4 mb-3 active:opacity-80"
+                onPress={() => handleShare(false)}
+              >
+                <Text className="text-2xl mr-4">📊</Text>
+                <View className="flex-1">
+                  <Text className="text-text-primary font-medium">
+                    Full Report
+                  </Text>
+                  <Text className="text-text-secondary text-sm">
+                    Share with comparison images and statistics
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                className="flex-row items-center bg-background rounded-xl p-4 mb-3 active:opacity-80"
+                onPress={() => handleShare(true)}
+              >
+                <Text className="text-2xl mr-4">📷</Text>
+                <View className="flex-1">
+                  <Text className="text-text-primary font-medium">
+                    Comparison Only
+                  </Text>
+                  <Text className="text-text-secondary text-sm">
+                    Share just the before/after comparison images
+                  </Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                className="py-4 items-center active:opacity-80"
+                onPress={() => setShowShareOptions(false)}
+              >
+                <Text className="text-text-secondary font-medium">Cancel</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Sharing Loading Modal */}
+      <Modal
+        visible={isSharing}
+        transparent
+        animationType="fade"
+      >
+        <View className="flex-1 bg-black/60 items-center justify-center">
+          <View className="bg-surface rounded-2xl p-6 items-center mx-8">
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text className="text-text-primary font-medium mt-4">
+              Generating image...
+            </Text>
+            <Text className="text-text-secondary text-sm mt-1">
+              Please wait
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
