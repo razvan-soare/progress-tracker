@@ -36,3 +36,7 @@ enable_confirmations = false
 [functions.generate-upload-url]
 # Verify JWT is required for this function
 verify_jwt = true
+
+[functions.generate-monthly-reports]
+# JWT verification is optional - function handles auth via service role or cron secret
+verify_jwt = false
