@@ -7,18 +7,34 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  TouchableOpacity,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, Href } from "expo-router";
-import { TextInput, Button, IconButton, LoadingSpinner } from "@/components/ui";
+import { TextInput, Button, IconButton, LoadingSpinner, CompressionOverlay } from "@/components/ui";
 import { useProjectsStore, useEntriesStore } from "@/lib/store";
 import { useBackHandler } from "@/lib/hooks";
 import { useToast } from "@/lib/toast";
 import { useNetwork } from "@/lib/network/NetworkContext";
 import { useBackgroundUpload } from "@/lib/sync/useBackgroundUpload";
+import {
+  pickMediaFromLibrary,
+  compressPhoto,
+  compressVideo,
+  generateVideoThumbnailSafe,
+  deleteImage,
+} from "@/lib/utils";
+import { deleteAsync } from "expo-file-system/legacy";
 import type { EntryType } from "@/types";
 
 const MAX_CAPTION_LENGTH = 500;
+
+type MediaState = {
+  uri: string;
+  type: EntryType;
+  thumbnailUri?: string;
+  durationSeconds?: number;
+};
 
 export default function EntryCreateScreen() {
   const router = useRouter();
@@ -39,10 +55,24 @@ export default function EntryCreateScreen() {
   const [caption, setCaption] = useState("");
   const [isLoadingProject, setIsLoadingProject] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [uploadMode, setUploadMode] = useState<"now" | "later">("now");
+  const [isProcessingMedia, setIsProcessingMedia] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState("Preparing media...");
+
+  // Local media state (from URL params or user selection)
+  const [localMedia, setLocalMedia] = useState<MediaState | null>(() => {
+    if (mediaUri && mediaType) {
+      return {
+        uri: mediaUri,
+        type: mediaType,
+        thumbnailUri: thumbnailUri,
+        durationSeconds: durationSeconds ? parseInt(durationSeconds, 10) : undefined,
+      };
+    }
+    return null;
+  });
 
   const project = projectId ? projectsById[projectId] : null;
-  const hasMedia = Boolean(mediaUri && mediaType);
+  const hasMedia = Boolean(localMedia);
   const isTextEntry = !hasMedia;
 
   // For text-only entries, text is required (min 1 character)
@@ -104,7 +134,126 @@ export default function EntryCreateScreen() {
     setCaption(trimmedText);
   }, []);
 
-  const handleSave = useCallback(async (mode: "now" | "later" = uploadMode) => {
+  const handlePickMedia = useCallback(async () => {
+    setIsProcessingMedia(true);
+    setProcessingMessage("Selecting media...");
+
+    try {
+      const result = await pickMediaFromLibrary();
+
+      if (!result.success) {
+        if (!result.cancelled) {
+          showError(result.error);
+        }
+        setIsProcessingMedia(false);
+        return;
+      }
+
+      const { uri, type, duration } = result;
+
+      // Process the media (compress and generate thumbnail if needed)
+      setProcessingMessage(type === "photo" ? "Compressing photo..." : "Processing video...");
+
+      if (type === "photo") {
+        const compressionResult = await compressPhoto(uri);
+
+        if (!compressionResult.success) {
+          showError(`Failed to compress photo: ${compressionResult.error}`);
+          // Clean up the original file
+          await deleteImage(uri);
+          setIsProcessingMedia(false);
+          return;
+        }
+
+        // Clean up original file if compression created a new file
+        if (compressionResult.uri !== uri) {
+          await deleteImage(uri);
+        }
+
+        setLocalMedia({
+          uri: compressionResult.uri,
+          type: "photo",
+        });
+      } else {
+        // Video processing
+        setProcessingMessage("Copying video...");
+        const compressionResult = await compressVideo(uri);
+
+        if (!compressionResult.success) {
+          showError(`Failed to process video: ${compressionResult.error}`);
+          // Clean up the original file
+          try {
+            await deleteAsync(uri, { idempotent: true });
+          } catch {
+            // Ignore cleanup errors
+          }
+          setIsProcessingMedia(false);
+          return;
+        }
+
+        // Generate thumbnail
+        setProcessingMessage("Generating thumbnail...");
+        const thumbnailResult = await generateVideoThumbnailSafe(compressionResult.uri);
+
+        // Clean up original file if it's different from compressed
+        if (compressionResult.uri !== uri) {
+          try {
+            await deleteAsync(uri, { idempotent: true });
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+
+        setLocalMedia({
+          uri: compressionResult.uri,
+          type: "video",
+          thumbnailUri: thumbnailResult.success ? thumbnailResult.uri : undefined,
+          durationSeconds: duration,
+        });
+      }
+
+      showSuccess(type === "photo" ? "Photo added!" : "Video added!");
+    } catch (error) {
+      console.error("Failed to pick media:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      showError(`Failed to add media: ${errorMessage}`);
+    } finally {
+      setIsProcessingMedia(false);
+    }
+  }, [showError, showSuccess]);
+
+  const handleRemoveMedia = useCallback(async () => {
+    if (!localMedia) return;
+
+    Alert.alert(
+      "Remove Media?",
+      "Are you sure you want to remove this media?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            // Clean up files
+            try {
+              if (localMedia.uri) {
+                await deleteAsync(localMedia.uri, { idempotent: true });
+              }
+              if (localMedia.thumbnailUri) {
+                await deleteAsync(localMedia.thumbnailUri, { idempotent: true });
+              }
+            } catch {
+              // Ignore cleanup errors
+            }
+
+            setLocalMedia(null);
+          },
+        },
+      ]
+    );
+  }, [localMedia]);
+
+  const handleSave = useCallback(async (mode: "now" | "later" = "now") => {
     if (!projectId) {
       showError("Invalid project");
       return;
@@ -117,16 +266,15 @@ export default function EntryCreateScreen() {
 
     setIsSaving(true);
     try {
-      const entryType: EntryType = isTextEntry ? "text" : mediaType!;
-      const duration = durationSeconds ? parseInt(durationSeconds, 10) : undefined;
+      const entryType: EntryType = isTextEntry ? "text" : localMedia!.type;
 
       const newEntry = await createEntry({
         projectId,
         entryType,
         contentText: caption.trim() || undefined,
-        mediaUri: hasMedia ? mediaUri : undefined,
-        thumbnailUri: entryType === "video" ? thumbnailUri : undefined,
-        durationSeconds: entryType === "video" ? duration : undefined,
+        mediaUri: hasMedia ? localMedia!.uri : undefined,
+        thumbnailUri: entryType === "video" ? localMedia?.thumbnailUri : undefined,
+        durationSeconds: entryType === "video" ? localMedia?.durationSeconds : undefined,
       });
 
       // If "Upload Now" is selected and we're online, trigger immediate upload check
@@ -162,17 +310,13 @@ export default function EntryCreateScreen() {
     projectId,
     isTextEntry,
     isTextValid,
-    mediaType,
-    mediaUri,
-    thumbnailUri,
-    durationSeconds,
+    localMedia,
     caption,
     hasMedia,
     createEntry,
     showSuccess,
     showError,
     router,
-    uploadMode,
     isOnline,
     checkPendingUploads,
   ]);
@@ -213,6 +357,8 @@ export default function EntryCreateScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
+      {isProcessingMedia && <CompressionOverlay message={processingMessage} />}
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
@@ -232,7 +378,7 @@ export default function EntryCreateScreen() {
               className="text-lg font-semibold text-text-primary text-center"
               numberOfLines={1}
             >
-              {isTextEntry ? "New Text Entry" : "New Entry"}
+              New Entry
             </Text>
             {project && (
               <Text
@@ -253,20 +399,21 @@ export default function EntryCreateScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 24 }}
         >
-          {/* Media Thumbnail (if media entry) */}
-          {hasMedia && (
+          {/* Media Section */}
+          {hasMedia ? (
+            /* Media Thumbnail */
             <View className="mt-4 items-center">
               <View className="rounded-xl overflow-hidden bg-surface relative">
                 <Image
-                  source={{ uri: mediaType === "video" && thumbnailUri ? thumbnailUri : mediaUri }}
+                  source={{ uri: localMedia!.type === "video" && localMedia!.thumbnailUri ? localMedia!.thumbnailUri : localMedia!.uri }}
                   className="w-64 h-64"
                   resizeMode="cover"
                   accessibilityLabel={
-                    mediaType === "photo" ? "Captured photo" : "Captured video thumbnail"
+                    localMedia!.type === "photo" ? "Selected photo" : "Selected video thumbnail"
                   }
                 />
                 {/* Video overlay indicator */}
-                {mediaType === "video" && (
+                {localMedia!.type === "video" && (
                   <>
                     {/* Play icon overlay */}
                     <View className="absolute inset-0 items-center justify-center">
@@ -275,35 +422,50 @@ export default function EntryCreateScreen() {
                       </View>
                     </View>
                     {/* Duration badge */}
-                    {durationSeconds && (
+                    {localMedia!.durationSeconds && (
                       <View className="absolute bottom-2 right-2 bg-black/70 px-2 py-1 rounded">
                         <Text className="text-white text-sm font-medium">
-                          {formatDuration(parseInt(durationSeconds, 10))}
+                          {formatDuration(localMedia!.durationSeconds)}
                         </Text>
                       </View>
                     )}
                   </>
                 )}
+                {/* Remove button */}
+                <TouchableOpacity
+                  onPress={handleRemoveMedia}
+                  className="absolute top-2 right-2 w-8 h-8 bg-black/60 rounded-full items-center justify-center"
+                  accessibilityLabel="Remove media"
+                  accessibilityHint="Tap to remove the selected media"
+                >
+                  <Text className="text-white text-lg font-bold">×</Text>
+                </TouchableOpacity>
               </View>
               <Text className="text-text-secondary text-sm mt-2">
-                {mediaType === "photo" ? "Photo" : "Video"} preview
+                {localMedia!.type === "photo" ? "Photo" : "Video"} preview
               </Text>
             </View>
-          )}
-
-          {/* Text Entry Icon (if text-only) */}
-          {isTextEntry && (
+          ) : (
+            /* Add Media / Text Entry Options */
             <View className="mt-6 items-center">
-              <View className="w-20 h-20 bg-surface rounded-full items-center justify-center">
-                <Text className="text-4xl">📝</Text>
-              </View>
-              <Text className="text-text-secondary text-sm mt-2">
-                Text Entry
+              <TouchableOpacity
+                onPress={handlePickMedia}
+                className="w-32 h-32 bg-surface rounded-xl items-center justify-center border-2 border-dashed border-border"
+                accessibilityLabel="Add photo or video"
+                accessibilityHint="Tap to select a photo or video from your library"
+              >
+                <Text className="text-4xl mb-2">📷</Text>
+                <Text className="text-text-secondary text-sm text-center">
+                  Add Photo{"\n"}or Video
+                </Text>
+              </TouchableOpacity>
+              <Text className="text-text-secondary text-sm mt-4">
+                Or write a text-only entry below
               </Text>
             </View>
           )}
 
-          {/* Caption Input */}
+          {/* Caption/Text Input */}
           <View className="mt-6">
             <TextInput
               label={isTextEntry ? "Entry Text *" : "Caption (optional)"}
@@ -357,8 +519,8 @@ export default function EntryCreateScreen() {
                 <Button
                   title="Upload Later"
                   onPress={() => handleSave("later")}
-                  disabled={!canSave}
-                  loading={isSaving && uploadMode === "later"}
+                  disabled={!canSave || isSaving}
+                  loading={false}
                   variant="secondary"
                   accessibilityLabel="Save and upload later"
                   accessibilityHint="Saves your entry and queues it for upload later"
@@ -368,8 +530,8 @@ export default function EntryCreateScreen() {
                 <Button
                   title="Upload Now"
                   onPress={() => handleSave("now")}
-                  disabled={!canSave}
-                  loading={isSaving && uploadMode === "now"}
+                  disabled={!canSave || isSaving}
+                  loading={isSaving}
                   variant="primary"
                   accessibilityLabel="Save and upload now"
                   accessibilityHint="Saves your entry and starts uploading immediately"

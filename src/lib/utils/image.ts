@@ -169,3 +169,154 @@ export async function deleteImage(uri: string): Promise<boolean> {
     return false;
   }
 }
+
+export type MediaPickerResult =
+  | { success: true; uri: string; type: "photo" | "video"; duration?: number }
+  | { success: false; error: string; cancelled?: boolean };
+
+const VIDEOS_DIRECTORY = `${documentDirectory}videos/`;
+
+async function ensureVideosDirectory(): Promise<void> {
+  const dirInfo = await getInfoAsync(VIDEOS_DIRECTORY);
+  if (!dirInfo.exists) {
+    await makeDirectoryAsync(VIDEOS_DIRECTORY, { intermediates: true });
+  }
+}
+
+async function saveVideoToDocuments(sourceUri: string): Promise<string> {
+  await ensureVideosDirectory();
+
+  const fileExtension = sourceUri.split(".").pop()?.toLowerCase() || "mp4";
+  const fileName = `${generateId()}.${fileExtension}`;
+  const destinationUri = `${VIDEOS_DIRECTORY}${fileName}`;
+
+  await copyAsync({
+    from: sourceUri,
+    to: destinationUri,
+  });
+
+  return destinationUri;
+}
+
+/**
+ * Pick media (photo or video) from the device library
+ * Allows the user to select either photos or videos
+ */
+export async function pickMediaFromLibrary(): Promise<MediaPickerResult> {
+  try {
+    const hasPermission = await requestMediaLibraryPermission();
+    if (!hasPermission) {
+      return { success: false, error: "Photo library permission denied" };
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images", "videos"],
+      allowsEditing: false,
+      quality: IMAGE_QUALITY,
+      exif: false,
+      videoMaxDuration: 300, // 5 minutes max
+    });
+
+    if (result.canceled) {
+      return { success: false, error: "User cancelled", cancelled: true };
+    }
+
+    const asset = result.assets[0];
+    if (!asset?.uri) {
+      return { success: false, error: "No media selected" };
+    }
+
+    const isVideo = asset.type === "video";
+    let savedUri: string;
+
+    if (isVideo) {
+      savedUri = await saveVideoToDocuments(asset.uri);
+    } else {
+      savedUri = await saveImageToDocuments(asset.uri);
+    }
+
+    return {
+      success: true,
+      uri: savedUri,
+      type: isVideo ? "video" : "photo",
+      duration: isVideo ? Math.round((asset.duration || 0) / 1000) : undefined,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to select media";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Pick only a photo from the device library
+ */
+export async function pickPhotoFromLibrary(): Promise<MediaPickerResult> {
+  try {
+    const hasPermission = await requestMediaLibraryPermission();
+    if (!hasPermission) {
+      return { success: false, error: "Photo library permission denied" };
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: false,
+      quality: IMAGE_QUALITY,
+      exif: false,
+    });
+
+    if (result.canceled) {
+      return { success: false, error: "User cancelled", cancelled: true };
+    }
+
+    const asset = result.assets[0];
+    if (!asset?.uri) {
+      return { success: false, error: "No photo selected" };
+    }
+
+    const savedUri = await saveImageToDocuments(asset.uri);
+    return { success: true, uri: savedUri, type: "photo" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to select photo";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Pick only a video from the device library
+ */
+export async function pickVideoFromLibrary(): Promise<MediaPickerResult> {
+  try {
+    const hasPermission = await requestMediaLibraryPermission();
+    if (!hasPermission) {
+      return { success: false, error: "Photo library permission denied" };
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["videos"],
+      allowsEditing: false,
+      quality: IMAGE_QUALITY,
+      exif: false,
+      videoMaxDuration: 300, // 5 minutes max
+    });
+
+    if (result.canceled) {
+      return { success: false, error: "User cancelled", cancelled: true };
+    }
+
+    const asset = result.assets[0];
+    if (!asset?.uri) {
+      return { success: false, error: "No video selected" };
+    }
+
+    const savedUri = await saveVideoToDocuments(asset.uri);
+    return {
+      success: true,
+      uri: savedUri,
+      type: "video",
+      duration: Math.round((asset.duration || 0) / 1000),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to select video";
+    return { success: false, error: message };
+  }
+}
